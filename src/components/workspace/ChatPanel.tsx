@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown, SquarePen } from 'lucide-react';
+import { Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown, SquarePen, RefreshCw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -130,7 +130,6 @@ export function ChatPanel() {
   const [models, setModels] = useState<AvailableModel[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedProvider, setSelectedProvider] = useState<AIProvider>(readStoredAIProvider());
-  const [showModelPicker, setShowModelPicker] = useState(false);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [thinkingOpen, setThinkingOpen] = useState(false);
   const [thinkingDraft, setThinkingDraft] = useState('');
@@ -141,7 +140,7 @@ export function ChatPanel() {
   const [summaryExportOpen, setSummaryExportOpen] = useState(false);
   const [chatFontSize, setChatFontSize] = useState(DEFAULT_CHAT_FONT_SIZE);
   const [newChatLoading, setNewChatLoading] = useState(false);
-  const pickerRef = useRef<HTMLDivElement>(null);
+  const [newChatError, setNewChatError] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const skipSessionHydrationRef = useRef<string | null>(null);
@@ -453,15 +452,6 @@ export function ChatPanel() {
     textarea.style.overflowY = textarea.scrollHeight > MAX_INPUT_HEIGHT ? 'auto' : 'hidden';
   }, [chatFontSize, input]);
 
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setShowModelPicker(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, []);
 
   const fetchModels = async (provider: AIProvider) => {
     setModelsLoading(true);
@@ -481,7 +471,9 @@ export function ChatPanel() {
         setModels([]);
         setSelectedModel('');
       }
-    } catch { /* fallback */ }
+    } catch (error) {
+      console.error('Failed to fetch models', error);
+    }
     finally { setModelsLoading(false); }
   };
 
@@ -549,13 +541,16 @@ export function ChatPanel() {
 
     try {
       setNewChatLoading(true);
+      setNewChatError('');
 
-      let modelForProvider = models.find((m) => m.id === selectedModel)?.id;
-      if (!modelForProvider) {
-        const modelsRes = await fetch(`/api/models?${new URLSearchParams({ provider: selectedProvider }).toString()}`);
-        const modelsData = await modelsRes.json();
-        modelForProvider = modelsData?.models?.[0]?.id;
-      }
+      const providerForNewChat = readStoredAIProvider() || selectedProvider;
+      const modelsRes = await fetch(`/api/models?${new URLSearchParams({ provider: providerForNewChat }).toString()}`);
+      const modelsData = await modelsRes.json();
+      const availableModels: AvailableModel[] = Array.isArray(modelsData?.models) ? modelsData.models : [];
+      setModels(availableModels);
+      const modelForProvider = availableModels.some((m) => m.id === selectedModel)
+        ? selectedModel
+        : availableModels[0]?.id;
 
       const res = await fetch('/api/sessions', {
         method: 'POST',
@@ -564,7 +559,7 @@ export function ChatPanel() {
           folderPath: activeSessionFolder,
           title: fallbackTitle,
           model: modelForProvider || undefined,
-          provider: selectedProvider,
+          provider: providerForNewChat,
           sessionKind: activeSessionKind,
           pdfPath: activeSessionKind === 'pdf' ? activeSessionPdfPath : null,
         }),
@@ -577,18 +572,20 @@ export function ChatPanel() {
 
       const newSessionId = data.id as string;
       skipSessionHydrationRef.current = newSessionId;
-      setSelectedProvider((data.provider as AIProvider) || selectedProvider);
+      setSelectedProvider((data.provider as AIProvider) || providerForNewChat);
       setSelectedText(null);
       setScreenshot(null);
       commitSessionUiState(newSessionId, (current) => ({
         ...current,
-        provider: (data.provider as AIProvider) || selectedProvider,
+        provider: (data.provider as AIProvider) || providerForNewChat,
         selectedModel: (data.model as string) || modelForProvider || current.selectedModel,
         title: (data.title as string) || current.title,
       }));
       openSession(data as Session);
     } catch (error) {
-      console.error(error instanceof Error ? error.message : 'Failed to start a new chat');
+      const message = error instanceof Error ? error.message : 'Failed to start a new chat';
+      console.error(message);
+      setNewChatError(message);
     } finally {
       setNewChatLoading(false);
     }
@@ -876,12 +873,6 @@ export function ChatPanel() {
     }
   };
 
-  const displayName = (modelId: string) => {
-    const model = models.find((m) => m.id === modelId);
-    if (model?.display_name) return model.display_name;
-    return modelId.replace(/-\d{4}-\d{2}-\d{2}$/, '');
-  };
-
   const handleThinkingToggle = () => {
     if (!activeSessionId) {
       setThinkingOpen((current) => !current);
@@ -1025,36 +1016,39 @@ export function ChatPanel() {
             Export
           </button>
           {/* Model selector */}
-          <div className="relative" ref={pickerRef}>
-            <button
-              onClick={() => setShowModelPicker(!showModelPicker)}
-              className="flex min-w-28 items-center justify-between gap-2 rounded-md bg-emerald-100 px-3 py-1.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-200 transition-colors"
-            >
-              {modelsLoading ? (
+          <div className="relative">
+            {modelsLoading ? (
+              <div className="flex min-w-28 items-center justify-center gap-2 rounded-md bg-emerald-100 px-3 py-1.5 text-[11px] font-semibold text-emerald-700">
                 <Loader2 size={10} className="animate-spin" />
-              ) : (
-                <>
-                  {selectedModel ? displayName(selectedModel) : 'Model'}
-                  <ChevronDown size={10} strokeWidth={2.5} />
-                </>
-              )}
-            </button>
-            {showModelPicker && models.length > 0 && (
-              <div className="absolute right-0 top-full mt-1 w-56 bg-surface-container-lowest rounded-lg shadow-ambient z-50 py-1 max-h-60 overflow-y-auto">
-                {models.map((model) => (
-                  <button
-                    key={model.id}
-                    onClick={() => { setSelectedModel(model.id); setShowModelPicker(false); }}
-                    className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors ${
-                      model.id === selectedModel
-                        ? 'bg-emerald-50 text-emerald-700 font-semibold'
-                        : 'text-on-surface hover:bg-surface-container-low'
-                    }`}
-                  >
-                    {model.display_name || model.id}
-                  </button>
-                ))}
               </div>
+            ) : models.length === 0 ? (
+              <button
+                onClick={() => void fetchModels(selectedProvider)}
+                className="flex items-center gap-1 rounded-md bg-rose-100 px-3 py-1.5 text-[11px] font-semibold text-rose-700 hover:bg-rose-200 transition-colors"
+                title="No models loaded — click to retry"
+              >
+                No models
+                <RefreshCw size={10} strokeWidth={2.5} />
+              </button>
+            ) : (
+              <>
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="appearance-none min-w-28 rounded-md bg-emerald-100 pl-3 pr-7 py-1.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-200 transition-colors cursor-pointer"
+                >
+                  {models.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.display_name || model.id}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown
+                  size={10}
+                  strokeWidth={2.5}
+                  className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-emerald-700"
+                />
+              </>
             )}
           </div>
 
@@ -1066,6 +1060,13 @@ export function ChatPanel() {
           </button>
         </div>
       </div>
+
+      {newChatError && (
+        <div className="mx-4 mb-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-800">
+          <span className="font-semibold">New chat failed: </span>
+          {newChatError}
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 space-y-3">
