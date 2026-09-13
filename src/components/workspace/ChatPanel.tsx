@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown } from 'lucide-react';
+import { Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown, SquarePen } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -140,6 +140,7 @@ export function ChatPanel() {
   const [sessionTitle, setSessionTitle] = useState('');
   const [summaryExportOpen, setSummaryExportOpen] = useState(false);
   const [chatFontSize, setChatFontSize] = useState(DEFAULT_CHAT_FONT_SIZE);
+  const [newChatLoading, setNewChatLoading] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -534,6 +535,63 @@ export function ChatPanel() {
     setSelectedProvider((data.provider as AIProvider) || selectedProvider);
     openSession(data as Session);
     return data.id as string;
+  };
+
+  const handleNewChat = async () => {
+    if (!activeSessionFolder || !activeSessionKind || isLoading || newChatLoading) return;
+
+    const pdfSessionName = (activePdf?.name
+      || activeSessionPdfPath?.split('/').at(-1)
+      || 'PDF').replace(/\.pdf$/i, '');
+    const fallbackTitle = activeSessionKind === 'pdf' && activeSessionPdfPath
+      ? `${pdfSessionName} session`
+      : `${activeSessionFolder.split('/').filter(Boolean).at(-1) || 'Workspace'} session`;
+
+    try {
+      setNewChatLoading(true);
+
+      let modelForProvider = models.find((m) => m.id === selectedModel)?.id;
+      if (!modelForProvider) {
+        const modelsRes = await fetch(`/api/models?${new URLSearchParams({ provider: selectedProvider }).toString()}`);
+        const modelsData = await modelsRes.json();
+        modelForProvider = modelsData?.models?.[0]?.id;
+      }
+
+      const res = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          folderPath: activeSessionFolder,
+          title: fallbackTitle,
+          model: modelForProvider || undefined,
+          provider: selectedProvider,
+          sessionKind: activeSessionKind,
+          pdfPath: activeSessionKind === 'pdf' ? activeSessionPdfPath : null,
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data?.id) {
+        throw new Error(typeof data?.error === 'string' ? data.error : 'Failed to start a new chat');
+      }
+
+      const newSessionId = data.id as string;
+      skipSessionHydrationRef.current = newSessionId;
+      setSelectedProvider((data.provider as AIProvider) || selectedProvider);
+      setSelectedText(null);
+      setScreenshot(null);
+      commitSessionUiState(newSessionId, (current) => ({
+        ...current,
+        provider: (data.provider as AIProvider) || selectedProvider,
+        selectedModel: (data.model as string) || modelForProvider || current.selectedModel,
+        title: (data.title as string) || current.title,
+      }));
+      openSession(data as Session);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : 'Failed to start a new chat');
+    } finally {
+      setNewChatLoading(false);
+    }
   };
 
   const normalizeComparableText = (value: string): string => (
@@ -944,6 +1002,19 @@ export function ChatPanel() {
           {renderSummaryStatus()}
         </div>
         <div className="flex items-center gap-1">
+          <button
+            onClick={() => void handleNewChat()}
+            disabled={!activeSessionFolder || !activeSessionKind || newChatLoading}
+            className="flex items-center gap-1 rounded-md bg-surface-container px-2.5 py-1.5 text-[11px] font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-50"
+            title="Start a new chat"
+          >
+            {newChatLoading ? (
+              <Loader2 size={11} className="animate-spin" />
+            ) : (
+              <SquarePen size={11} strokeWidth={2} />
+            )}
+            New chat
+          </button>
           <button
             onClick={() => void handleOpenSummaryExport()}
             disabled={!activeSessionId || exportableTurnCount === 0 || summaryStatus === 'generating'}

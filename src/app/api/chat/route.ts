@@ -44,8 +44,16 @@ export async function POST(req: NextRequest) {
       content: prompt.trim(),
       timestamp: new Date().toISOString(),
     };
-    const resolvedModel = model || session.model || 'gpt-5.4-mini';
     const runtime = getProviderRuntime(session.provider);
+    const resolvedModel = model || session.model || (await runtime.listModels())[0]?.id;
+
+    if (!resolvedModel) {
+      return NextResponse.json(
+        { error: `No models available for provider "${session.provider}"` },
+        { status: 400 }
+      );
+    }
+
     const encoder = new TextEncoder();
 
     const stream = new ReadableStream<Uint8Array>({
