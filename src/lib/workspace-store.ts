@@ -24,6 +24,8 @@ export interface WorkspaceState {
   explorerOpen: boolean;
   // Whether the chat panel is visible
   chatOpen: boolean;
+  // Text currently selected by the user in the PDF viewer (outside highlight/erase mode)
+  selectedText: string | null;
 }
 
 export interface WorkspaceActions {
@@ -35,6 +37,7 @@ export interface WorkspaceActions {
   toggleExplorer: () => void;
   toggleChat: () => void;
   refreshTree: () => Promise<TreeNode | null>;
+  setSelectedText: (text: string | null) => void;
 }
 
 export type WorkspaceContextType = WorkspaceState & WorkspaceActions;

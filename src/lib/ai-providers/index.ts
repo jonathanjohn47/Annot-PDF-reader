@@ -55,6 +55,7 @@ const codexRuntime: ProviderRuntime = {
         sessionKind: input.sessionKind,
         prompt: input.prompt,
         currentPdfPath: input.currentPdfPath,
+        selectedText: input.selectedText,
       },
       options,
     );

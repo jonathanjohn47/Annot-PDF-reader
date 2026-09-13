@@ -42,6 +42,7 @@ export interface ProviderTurnInput {
   sessionKind: SessionKind;
   prompt: string;
   currentPdfPath?: string | null;
+  selectedText?: string | null;
 }
 
 export interface ProviderTurnResult {

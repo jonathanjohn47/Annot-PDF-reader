@@ -64,7 +64,7 @@ function setStoredHighlights(pdfPath: string, nextHighlights: Highlight[]): void
 }
 
 export function PdfViewer() {
-  const { activePdf, closePdf, activeSessionFolder, chatOpen, toggleChat } = useWorkspace();
+  const { activePdf, closePdf, activeSessionFolder, chatOpen, toggleChat, setSelectedText } = useWorkspace();
   const activePdfPath = activePdf?.path ?? '';
   const [zoom, setZoom] = useState(125);
   const [pageNumber, setPageNumber] = useState(1);
@@ -383,6 +383,12 @@ export function PdfViewer() {
     }
   };
 
+  const handlePlainTextSelection = () => {
+    const selection = window.getSelection();
+    const text = selection?.toString().trim() ?? '';
+    setSelectedText(text || null);
+  };
+
   const selectionContainsHighlightRect = (
     selectionRect: HighlightRect,
     highlightRect: HighlightRect,
@@ -576,7 +582,12 @@ export function PdfViewer() {
             return;
           }
 
-          void handleHighlightSelection(targetPage, pageShell);
+          if (highlightMode) {
+            void handleHighlightSelection(targetPage, pageShell);
+            return;
+          }
+
+          handlePlainTextSelection();
         }}
       >
         <Page

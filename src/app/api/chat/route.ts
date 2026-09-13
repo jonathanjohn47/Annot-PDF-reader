@@ -11,12 +11,14 @@ export async function POST(req: NextRequest) {
       prompt,
       model,
       currentPdfPath,
+      selectedText,
     } = body as {
       folderPath?: string;
       sessionId?: string;
       prompt?: string;
       model?: string;
       currentPdfPath?: string | null;
+      selectedText?: string | null;
     };
 
     if (!folderPath || !sessionId || !prompt?.trim()) {
@@ -59,6 +61,7 @@ export async function POST(req: NextRequest) {
               prompt: prompt.trim(),
               sessionKind: session.sessionKind,
               currentPdfPath: currentPdfPath ?? session.pdfPath ?? null,
+              selectedText: selectedText ?? null,
             }, {
               onEvent: (event) => {
                 writeEvent(event);

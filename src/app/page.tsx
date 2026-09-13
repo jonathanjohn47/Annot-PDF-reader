@@ -33,6 +33,7 @@ export default function AppPage() {
     activeSessionId: null,
     explorerOpen: true,
     chatOpen: false,
+    selectedText: null,
   });
   const [chatPanelWidth, setChatPanelWidth] = useState(DEFAULT_CHAT_PANEL_WIDTH);
   const [isResizingChat, setIsResizingChat] = useState(false);
@@ -54,6 +55,7 @@ export default function AppPage() {
       activeSessionPdfPath: pdf.path,
       activeSessionId: keepCurrentSession ? currentState.activeSessionId : null,
       chatOpen: keepCurrentSession ? currentState.chatOpen : false,
+      selectedText: keepCurrentSession ? currentState.selectedText : null,
     };
   }, []);
 
@@ -84,6 +86,7 @@ export default function AppPage() {
       activeSessionPdfPath: null,
       activeSessionId: null,
       chatOpen: false,
+      selectedText: null,
     }));
   }, []);
 
@@ -103,7 +106,7 @@ export default function AppPage() {
   }, []);
 
   const closePdf = useCallback(() => {
-    setState((s) => ({ ...s, activePdf: null }));
+    setState((s) => ({ ...s, activePdf: null, selectedText: null }));
   }, []);
 
   const toggleExplorer = useCallback(() => {
@@ -112,6 +115,10 @@ export default function AppPage() {
 
   const toggleChat = useCallback(() => {
     setState((s) => ({ ...s, chatOpen: !s.chatOpen }));
+  }, []);
+
+  const setSelectedText = useCallback((text: string | null) => {
+    setState((s) => ({ ...s, selectedText: text }));
   }, []);
 
   const refreshTree = useCallback(async () => {
@@ -265,6 +272,7 @@ export default function AppPage() {
     closePdf,
     toggleExplorer,
     toggleChat,
+    setSelectedText,
   };
   const contextValue = { ...ctx, refreshTree };
 

@@ -149,10 +149,6 @@ body {
   z-index: 3;
 }
 
-.pdf-highlight-layer--interactive {
-  pointer-events: auto;
-}
-
 .pdf-highlight-box {
   position: absolute;
   border-radius: 2px;

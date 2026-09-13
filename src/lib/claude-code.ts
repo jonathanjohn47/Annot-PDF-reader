@@ -43,6 +43,7 @@ interface ClaudeRunTurnInput {
   sessionKind: 'folder' | 'pdf';
   prompt: string;
   currentPdfPath?: string | null;
+  selectedText?: string | null;
 }
 
 interface ClaudeStreamEvent {
@@ -91,6 +92,7 @@ function buildPrompt({
   sessionKind,
   prompt,
   currentPdfPath,
+  selectedText,
 }: Omit<ClaudeRunTurnInput, 'providerSessionId' | 'model'>): string {
   const workspaceRoot = getWorkspaceRoot();
   const contextLines = [
@@ -99,6 +101,14 @@ function buildPrompt({
     `- Current session folder: ${folderPath || '.'}`,
     `- Session type: ${sessionKind === 'pdf' ? 'PDF-focused reading session' : 'Folder-wide research session'}`,
     currentPdfPath ? `- Current PDF open in the viewer: ${currentPdfPath}` : '- No PDF is currently open in the viewer.',
+    ...(selectedText?.trim()
+      ? [
+          '- The user has selected the following text in the PDF viewer. Treat it as the primary focus of their request unless the request clearly says otherwise:',
+          '"""',
+          selectedText.trim(),
+          '"""',
+        ]
+      : []),
     sessionKind === 'pdf'
       ? '- Treat the current PDF as the primary document for this conversation. Only branch out when it materially helps.'
       : '- Prefer the current folder first, but you may inspect other files in the workspace if needed.',

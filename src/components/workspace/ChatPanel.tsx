@@ -117,6 +117,8 @@ export function ChatPanel() {
     activePdf,
     openSession,
     toggleChat,
+    selectedText,
+    setSelectedText,
   } = useWorkspace();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -733,8 +735,11 @@ export function ChatPanel() {
             currentPdfPath: activeSessionKind === 'pdf'
               ? (activeSessionPdfPath || activePdf?.path || null)
             : (activePdf?.path || null),
+            selectedText: selectedText || null,
         }),
       });
+
+      setSelectedText(null);
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -1192,6 +1197,21 @@ export function ChatPanel() {
 
       {/* Input */}
       <div className="px-4 py-3 shrink-0">
+        {selectedText && (
+          <div className="flex items-start gap-2 mb-2 px-3 py-2 rounded-lg bg-surface-container-low border border-outline-variant/20">
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] font-medium text-on-surface-variant mb-0.5">Selected text</div>
+              <div className="text-xs text-on-surface line-clamp-2">{selectedText}</div>
+            </div>
+            <button
+              onClick={() => setSelectedText(null)}
+              className="shrink-0 text-on-surface-variant hover:text-on-surface transition-colors"
+              aria-label="Clear selected text"
+            >
+              <X size={12} strokeWidth={2} />
+            </button>
+          </div>
+        )}
         <div className="flex items-end gap-2 bg-surface-container-low rounded-xl px-3 py-2.5">
           <textarea
             ref={inputRef}
