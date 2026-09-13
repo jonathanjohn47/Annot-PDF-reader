@@ -56,6 +56,7 @@ const codexRuntime: ProviderRuntime = {
         prompt: input.prompt,
         currentPdfPath: input.currentPdfPath,
         selectedText: input.selectedText,
+        screenshotPath: input.screenshotPath,
       },
       options,
     );

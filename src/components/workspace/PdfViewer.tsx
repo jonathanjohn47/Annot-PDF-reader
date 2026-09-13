@@ -19,6 +19,7 @@ import {
   MessageSquare,
   Loader2,
   Save,
+  Camera,
 } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 
@@ -64,7 +65,7 @@ function setStoredHighlights(pdfPath: string, nextHighlights: Highlight[]): void
 }
 
 export function PdfViewer() {
-  const { activePdf, closePdf, activeSessionFolder, chatOpen, toggleChat, setSelectedText } = useWorkspace();
+  const { activePdf, closePdf, activeSessionFolder, chatOpen, toggleChat, setSelectedText, setScreenshot } = useWorkspace();
   const activePdfPath = activePdf?.path ?? '';
   const [zoom, setZoom] = useState(125);
   const [pageNumber, setPageNumber] = useState(1);
@@ -73,6 +74,15 @@ export function PdfViewer() {
   const [containerWidth, setContainerWidth] = useState(720);
   const [highlightMode, setHighlightMode] = useState<HighlightMode>(null);
   const [eraseMode, setEraseMode] = useState(false);
+  const [screenshotMode, setScreenshotMode] = useState(false);
+  const [screenshotDraft, setScreenshotDraft] = useState<{
+    targetPage: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const [screenshotSaving, setScreenshotSaving] = useState(false);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [selectionNotice, setSelectionNotice] = useState<string | null>(null);
   const [annotationSyncing, setAnnotationSyncing] = useState(false);
@@ -85,6 +95,14 @@ export function PdfViewer() {
   const [exportMarkdown, setExportMarkdown] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
   const pageShellRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const canvasRefs = useRef<Record<number, HTMLCanvasElement | null>>({});
+  const screenshotDragRef = useRef<{
+    targetPage: number;
+    shell: HTMLDivElement;
+    startX: number;
+    startY: number;
+    rect: { x: number; y: number; width: number; height: number };
+  } | null>(null);
 
   const fileUrl = useMemo(
     () => `/api/workspace/file?path=${encodeURIComponent(activePdfPath)}`,
@@ -383,6 +401,124 @@ export function PdfViewer() {
     }
   };
 
+  const finalizeScreenshot = async (
+    targetPage: number,
+    rect: { x: number; y: number; width: number; height: number },
+  ) => {
+    setScreenshotDraft(null);
+    setScreenshotMode(false);
+
+    if (rect.width < 12 || rect.height < 12) {
+      setSelectionNotice('Draw a larger rectangle to capture a screenshot.');
+      return;
+    }
+
+    const canvas = canvasRefs.current[targetPage];
+    const pageShell = pageShellRefs.current[targetPage];
+    if (!canvas || !pageShell || !activePdfPath) {
+      setSelectionNotice('Could not capture a screenshot from this page.');
+      return;
+    }
+
+    const shellRect = pageShell.getBoundingClientRect();
+    const scaleX = canvas.width / shellRect.width;
+    const scaleY = canvas.height / shellRect.height;
+
+    const sx = rect.x * scaleX;
+    const sy = rect.y * scaleY;
+    const sw = rect.width * scaleX;
+    const sh = rect.height * scaleY;
+
+    const cropCanvas = document.createElement('canvas');
+    cropCanvas.width = Math.max(1, Math.round(sw));
+    cropCanvas.height = Math.max(1, Math.round(sh));
+    const ctx = cropCanvas.getContext('2d');
+
+    if (!ctx) {
+      setSelectionNotice('Could not capture a screenshot from this page.');
+      return;
+    }
+
+    ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, cropCanvas.width, cropCanvas.height);
+    const dataUrl = cropCanvas.toDataURL('image/png');
+
+    try {
+      setScreenshotSaving(true);
+
+      const res = await fetch('/api/workspace/screenshot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pdfPath: activePdfPath, imageDataUrl: dataUrl }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || data?.error) {
+        throw new Error(typeof data?.error === 'string' ? data.error : 'Failed to save screenshot.');
+      }
+
+      setScreenshot({ path: data.path as string, dataUrl });
+      if (!chatOpen) toggleChat();
+      setSelectionNotice('Screenshot captured and attached to chat.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save screenshot.';
+      setSelectionNotice(message);
+    } finally {
+      setScreenshotSaving(false);
+    }
+  };
+
+  const handleScreenshotMouseDown = (
+    targetPage: number,
+    pageShell: HTMLDivElement | null,
+    event: React.MouseEvent,
+  ) => {
+    if (!screenshotMode || !pageShell || screenshotSaving) return;
+    event.preventDefault();
+
+    const shellRect = pageShell.getBoundingClientRect();
+    const startX = event.clientX - shellRect.left;
+    const startY = event.clientY - shellRect.top;
+
+    screenshotDragRef.current = {
+      targetPage,
+      shell: pageShell,
+      startX,
+      startY,
+      rect: { x: startX, y: startY, width: 0, height: 0 },
+    };
+    setScreenshotDraft({ targetPage, x: startX, y: startY, width: 0, height: 0 });
+
+    const handleMove = (moveEvent: MouseEvent) => {
+      const drag = screenshotDragRef.current;
+      if (!drag) return;
+
+      const rect = drag.shell.getBoundingClientRect();
+      const currentX = Math.min(Math.max(moveEvent.clientX - rect.left, 0), rect.width);
+      const currentY = Math.min(Math.max(moveEvent.clientY - rect.top, 0), rect.height);
+      const nextRect = {
+        x: Math.min(drag.startX, currentX),
+        y: Math.min(drag.startY, currentY),
+        width: Math.abs(currentX - drag.startX),
+        height: Math.abs(currentY - drag.startY),
+      };
+      drag.rect = nextRect;
+      setScreenshotDraft({ targetPage: drag.targetPage, ...nextRect });
+    };
+
+    const handleUp = () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+      const drag = screenshotDragRef.current;
+      screenshotDragRef.current = null;
+      if (drag) {
+        void finalizeScreenshot(drag.targetPage, drag.rect);
+      }
+    };
+
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+  };
+
   const handlePlainTextSelection = () => {
     const selection = window.getSelection();
     const text = selection?.toString().trim() ?? '';
@@ -573,8 +709,15 @@ export function PdfViewer() {
           pageShellRefs.current[targetPage] = node;
         }}
         data-page-number={targetPage}
-        className="pdf-page-shell overflow-hidden rounded-xl shadow-ambient"
+        className={`pdf-page-shell overflow-hidden rounded-xl shadow-ambient ${screenshotMode ? 'select-none cursor-crosshair' : ''}`}
+        onMouseDown={(event) => {
+          if (screenshotMode) {
+            handleScreenshotMouseDown(targetPage, pageShellRefs.current[targetPage], event);
+          }
+        }}
         onMouseUp={() => {
+          if (screenshotMode) return;
+
           const pageShell = pageShellRefs.current[targetPage];
 
           if (eraseMode) {
@@ -593,6 +736,9 @@ export function PdfViewer() {
         <Page
           pageNumber={targetPage}
           width={pageWidth}
+          canvasRef={(node) => {
+            canvasRefs.current[targetPage] = node;
+          }}
           renderAnnotationLayer={false}
           renderTextLayer
           loading={
@@ -636,6 +782,18 @@ export function PdfViewer() {
             ));
           })}
         </div>
+        {screenshotDraft && screenshotDraft.targetPage === targetPage && (
+          <div
+            className="absolute border-2 border-primary bg-primary/10 pointer-events-none"
+            style={{
+              left: screenshotDraft.x,
+              top: screenshotDraft.y,
+              width: screenshotDraft.width,
+              height: screenshotDraft.height,
+              zIndex: 5,
+            }}
+          />
+        )}
       </div>
     );
   };
@@ -739,6 +897,7 @@ export function PdfViewer() {
           <button
             onClick={() => {
               setEraseMode(false);
+              setScreenshotMode(false);
               setHighlightMode((current) => current === 'unknown' ? null : 'unknown');
             }}
             className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${
@@ -753,6 +912,7 @@ export function PdfViewer() {
           <button
             onClick={() => {
               setEraseMode(false);
+              setScreenshotMode(false);
               setHighlightMode((current) => current === 'important' ? null : 'important');
             }}
             className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${
@@ -767,6 +927,7 @@ export function PdfViewer() {
           <button
             onClick={() => {
               setHighlightMode(null);
+              setScreenshotMode(false);
               setEraseMode((current) => !current);
             }}
             className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${
@@ -777,6 +938,21 @@ export function PdfViewer() {
             title="Toggle highlight eraser"
           >
             <Eraser size={12} strokeWidth={2} />
+          </button>
+          <button
+            onClick={() => {
+              setHighlightMode(null);
+              setEraseMode(false);
+              setScreenshotMode((current) => !current);
+            }}
+            className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${
+              screenshotMode
+                ? 'bg-on-surface text-surface-container-lowest'
+                : 'text-on-surface-variant hover:bg-surface-container-high'
+            }`}
+            title="Capture a screenshot region for the chat"
+          >
+            <Camera size={12} strokeWidth={2} />
           </button>
           <button
             onClick={() => void handleOpenExportPreview()}
@@ -822,7 +998,9 @@ export function PdfViewer() {
               {activePdf.name}
             </h1>
             <div className="mt-2 flex items-center gap-2 text-[11px] text-on-surface-variant">
-              {eraseMode ? (
+              {screenshotMode ? (
+                <span>Screenshot mode is on. Drag a rectangle over a diagram or equation to attach it to the chat.</span>
+              ) : eraseMode ? (
                 <span>Erase mode is on. Select text over highlighted content to remove those PDF highlights.</span>
               ) : highlightMode ? (
                 <span>
@@ -835,6 +1013,9 @@ export function PdfViewer() {
               )}
               {annotationSyncing && (
                 <span className="text-outline">Syncing annotations...</span>
+              )}
+              {screenshotSaving && (
+                <span className="text-outline">Saving screenshot...</span>
               )}
               {selectionNotice && (
                 <span className="text-outline">{selectionNotice}</span>

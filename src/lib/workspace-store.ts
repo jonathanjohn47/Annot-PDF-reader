@@ -26,6 +26,8 @@ export interface WorkspaceState {
   chatOpen: boolean;
   // Text currently selected by the user in the PDF viewer (outside highlight/erase mode)
   selectedText: string | null;
+  // Screenshot region captured from the PDF viewer, pending attachment to a chat query
+  screenshot: { path: string; dataUrl: string } | null;
 }
 
 export interface WorkspaceActions {
@@ -38,6 +40,7 @@ export interface WorkspaceActions {
   toggleChat: () => void;
   refreshTree: () => Promise<TreeNode | null>;
   setSelectedText: (text: string | null) => void;
+  setScreenshot: (screenshot: { path: string; dataUrl: string } | null) => void;
 }
 
 export type WorkspaceContextType = WorkspaceState & WorkspaceActions;

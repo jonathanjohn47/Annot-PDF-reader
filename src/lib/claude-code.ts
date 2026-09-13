@@ -44,6 +44,7 @@ interface ClaudeRunTurnInput {
   prompt: string;
   currentPdfPath?: string | null;
   selectedText?: string | null;
+  screenshotPath?: string | null;
 }
 
 interface ClaudeStreamEvent {
@@ -93,6 +94,7 @@ function buildPrompt({
   prompt,
   currentPdfPath,
   selectedText,
+  screenshotPath,
 }: Omit<ClaudeRunTurnInput, 'providerSessionId' | 'model'>): string {
   const workspaceRoot = getWorkspaceRoot();
   const contextLines = [
@@ -107,6 +109,12 @@ function buildPrompt({
           '"""',
           selectedText.trim(),
           '"""',
+        ]
+      : []),
+    ...(screenshotPath?.trim()
+      ? [
+          `- The user captured a screenshot region from the PDF viewer (likely a math equation, diagram, or figure) at this path: ${screenshotPath.trim()}`,
+          '- Use the Read tool to view this image before answering, and treat it as the primary focus of their request unless the request clearly says otherwise.',
         ]
       : []),
     sessionKind === 'pdf'

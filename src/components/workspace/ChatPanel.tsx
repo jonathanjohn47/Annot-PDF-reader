@@ -119,6 +119,8 @@ export function ChatPanel() {
     toggleChat,
     selectedText,
     setSelectedText,
+    screenshot,
+    setScreenshot,
   } = useWorkspace();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -736,10 +738,12 @@ export function ChatPanel() {
               ? (activeSessionPdfPath || activePdf?.path || null)
             : (activePdf?.path || null),
             selectedText: selectedText || null,
+            screenshotPath: screenshot?.path || null,
         }),
       });
 
       setSelectedText(null);
+      setScreenshot(null);
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -1207,6 +1211,26 @@ export function ChatPanel() {
               onClick={() => setSelectedText(null)}
               className="shrink-0 text-on-surface-variant hover:text-on-surface transition-colors"
               aria-label="Clear selected text"
+            >
+              <X size={12} strokeWidth={2} />
+            </button>
+          </div>
+        )}
+        {screenshot && (
+          <div className="flex items-start gap-2 mb-2 px-3 py-2 rounded-lg bg-surface-container-low border border-outline-variant/20">
+            <img
+              src={screenshot.dataUrl}
+              alt="Captured screenshot"
+              className="w-12 h-12 rounded object-cover border border-outline-variant/30 shrink-0"
+            />
+            <div className="flex-1 min-w-0 self-center">
+              <div className="text-[10px] font-medium text-on-surface-variant">Screenshot attached</div>
+              <div className="text-xs text-on-surface-variant">Diagram or equation ready to send</div>
+            </div>
+            <button
+              onClick={() => setScreenshot(null)}
+              className="shrink-0 text-on-surface-variant hover:text-on-surface transition-colors"
+              aria-label="Clear screenshot"
             >
               <X size={12} strokeWidth={2} />
             </button>
