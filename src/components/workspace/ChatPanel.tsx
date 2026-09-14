@@ -10,6 +10,7 @@ import { DEFAULT_AI_PROVIDER } from '@/lib/ai-providers/config';
 import { MarkdownPreviewDialog } from '@/components/common/MarkdownPreviewDialog';
 import { buildSessionSummaryMarkdown, getSessionSummaryMarkdownFileName } from '@/lib/session-summary-markdown';
 import { useWorkspace } from '@/lib/workspace-store';
+import { normalizeMathMarkdown } from '@/lib/markdown-math';
 import { AI_PROVIDER_EVENT, readStoredAIProvider } from '@/lib/provider-preferences';
 import { AIProvider, ChatMessage, Session, SessionKind, SessionTurnSummary } from '@/types';
 import {
@@ -86,12 +87,6 @@ interface SessionUiState {
   provider: AIProvider;
   selectedModel?: string;
   title?: string;
-}
-
-function normalizeMathMarkdown(content: string): string {
-  return content
-    .replace(/\\\[\s*([\s\S]*?)\s*\\\]/g, (_, expression: string) => `\n$$\n${expression.trim()}\n$$\n`)
-    .replace(/\\\(\s*([\s\S]*?)\s*\\\)/g, (_, expression: string) => `$${expression.trim()}$`);
 }
 
 function createDefaultSessionUiState(): SessionUiState {

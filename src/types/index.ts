@@ -71,3 +71,14 @@ export interface Highlight {
     height: number;
   };
 }
+
+// ── Notes ───────────────────────────────────────────────────────
+
+export interface PdfNote {
+  id: string;
+  pdfPath: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}

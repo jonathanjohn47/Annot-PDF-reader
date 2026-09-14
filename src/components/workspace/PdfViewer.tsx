@@ -5,6 +5,7 @@ import { useWorkspace } from '@/lib/workspace-store';
 import { Highlight } from '@/types';
 import { getHighlightRects, mergeHighlights, normalizeHighlightRects, type HighlightRect } from '@/lib/highlight-utils';
 import { MarkdownPreviewDialog } from '@/components/common/MarkdownPreviewDialog';
+import { NotesDialog } from '@/components/workspace/NotesDialog';
 import {
   Minus,
   Plus,
@@ -20,6 +21,7 @@ import {
   Loader2,
   Save,
   Camera,
+  NotebookPen,
 } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 
@@ -93,6 +95,7 @@ export function PdfViewer() {
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [exportMarkdown, setExportMarkdown] = useState('');
+  const [notesOpen, setNotesOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const pageShellRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const canvasRefs = useRef<Record<number, HTMLCanvasElement | null>>({});
@@ -961,6 +964,17 @@ export function PdfViewer() {
           >
             <FileDown size={12} strokeWidth={2} />
           </button>
+          <button
+            onClick={() => setNotesOpen(true)}
+            className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${
+              notesOpen
+                ? 'bg-on-surface text-surface-container-lowest'
+                : 'text-on-surface-variant hover:bg-surface-container-high'
+            }`}
+            title="Notes"
+          >
+            <NotebookPen size={12} strokeWidth={2} />
+          </button>
           <a
             href={fileUrl}
             download={activePdf.name}
@@ -1061,6 +1075,13 @@ export function PdfViewer() {
         confirmLabel="Download Markdown"
         onCancel={() => setExportDialogOpen(false)}
         onConfirm={handleConfirmExport}
+      />
+
+      <NotesDialog
+        open={notesOpen}
+        pdfPath={activePdfPath}
+        pdfName={activePdf.name}
+        onClose={() => setNotesOpen(false)}
       />
 
       {selectedHighlight && noteDialogOpen && (
