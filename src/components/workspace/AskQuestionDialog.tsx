@@ -24,6 +24,48 @@ interface AskQuestionDialogProps {
   onClose: () => void;
 }
 
+function AskMarkdown({ content, className }: { content: string; className?: string }) {
+  return (
+    <div className={className}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+        components={{
+          p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+          ul: ({ children }) => <ul className="mb-3 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>,
+          ol: ({ children }) => <ol className="mb-3 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>,
+          li: ({ children }) => <li>{children}</li>,
+          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+          code: ({ children, className: codeClassName }) => {
+            const isBlock = Boolean(codeClassName);
+            if (isBlock) {
+              return (
+                <code className="block overflow-x-auto rounded-lg bg-surface-container px-3 py-2 font-functional text-xs">
+                  {children}
+                </code>
+              );
+            }
+
+            return (
+              <code className="rounded bg-surface-container px-1.5 py-0.5 font-functional text-xs">
+                {children}
+              </code>
+            );
+          },
+          pre: ({ children }) => <pre className="mb-3 last:mb-0">{children}</pre>,
+          blockquote: ({ children }) => (
+            <blockquote className="mb-3 border-l-2 border-outline-variant pl-3 text-on-surface-variant last:mb-0">
+              {children}
+            </blockquote>
+          ),
+        }}
+      >
+        {normalizeMathMarkdown(content)}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
 export function AskQuestionDialog({
   open,
   selectedText,
@@ -139,9 +181,10 @@ export function AskQuestionDialog({
             <div className="text-[10px] font-medium uppercase tracking-widest text-on-surface-variant">
               Selected passage
             </div>
-            <p className="mt-2 whitespace-pre-wrap break-words text-sm text-on-surface">
-              {selectedText}
-            </p>
+            <AskMarkdown
+              content={selectedText}
+              className="chat-markdown font-editorial mt-2 text-sm text-on-surface"
+            />
           </div>
 
           {error && (
@@ -158,43 +201,7 @@ export function AskQuestionDialog({
                     {turn.question}
                   </div>
                 </div>
-                <div className="chat-markdown font-editorial text-sm text-on-surface">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm, remarkMath]}
-                    rehypePlugins={[rehypeKatex]}
-                    components={{
-                      p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
-                      ul: ({ children }) => <ul className="mb-3 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>,
-                      ol: ({ children }) => <ol className="mb-3 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>,
-                      li: ({ children }) => <li>{children}</li>,
-                      strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                      code: ({ children, className }) => {
-                        const isBlock = Boolean(className);
-                        if (isBlock) {
-                          return (
-                            <code className="block overflow-x-auto rounded-lg bg-surface-container px-3 py-2 font-functional text-xs">
-                              {children}
-                            </code>
-                          );
-                        }
-
-                        return (
-                          <code className="rounded bg-surface-container px-1.5 py-0.5 font-functional text-xs">
-                            {children}
-                          </code>
-                        );
-                      },
-                      pre: ({ children }) => <pre className="mb-3 last:mb-0">{children}</pre>,
-                      blockquote: ({ children }) => (
-                        <blockquote className="mb-3 border-l-2 border-outline-variant pl-3 text-on-surface-variant last:mb-0">
-                          {children}
-                        </blockquote>
-                      ),
-                    }}
-                  >
-                    {normalizeMathMarkdown(turn.answer)}
-                  </ReactMarkdown>
-                </div>
+                <AskMarkdown content={turn.answer} className="chat-markdown font-editorial text-sm text-on-surface" />
                 <button
                   onClick={() => void handleCopyAnswer(turn.answer, index)}
                   className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high"
