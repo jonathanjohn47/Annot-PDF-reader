@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown, SquarePen, RefreshCw } from 'lucide-react';
+import { Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown, SquarePen, RefreshCw, Copy, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -137,6 +137,7 @@ export function ChatPanel() {
   const [chatFontSize, setChatFontSize] = useState(DEFAULT_CHAT_FONT_SIZE);
   const [newChatLoading, setNewChatLoading] = useState(false);
   const [newChatError, setNewChatError] = useState('');
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const skipSessionHydrationRef = useRef<string | null>(null);
@@ -882,6 +883,18 @@ export function ChatPanel() {
     }));
   };
 
+  const handleCopyMessage = async (message: ChatMessage) => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopiedMessageId(message.id);
+      window.setTimeout(() => {
+        setCopiedMessageId((current) => (current === message.id ? null : current));
+      }, 1500);
+    } catch {
+      // Clipboard access denied or unavailable — nothing to recover here.
+    }
+  };
+
   const handleSummaryExport = async () => {
     const blob = new Blob([summaryMarkdown], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -1208,6 +1221,17 @@ export function ChatPanel() {
                       {normalizeMathMarkdown(msg.content)}
                     </ReactMarkdown>
                   </div>
+                  <button
+                    onClick={() => void handleCopyMessage(msg)}
+                    className="mt-1 flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                  >
+                    {copiedMessageId === msg.id ? (
+                      <Check size={10} strokeWidth={2} />
+                    ) : (
+                      <Copy size={10} strokeWidth={2} />
+                    )}
+                    {copiedMessageId === msg.id ? 'Copied' : 'Copy'}
+                  </button>
                 </div>
               </div>
             )}

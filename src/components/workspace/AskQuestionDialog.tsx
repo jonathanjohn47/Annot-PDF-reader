@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, MessageCircleQuestion, Send, X } from 'lucide-react';
+import { Check, Copy, Loader2, MessageCircleQuestion, Send, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -37,6 +37,7 @@ export function AskQuestionDialog({
   const [turns, setTurns] = useState<AskQuestionTurn[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [copiedTurnIndex, setCopiedTurnIndex] = useState<number | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -101,6 +102,18 @@ export function AskQuestionDialog({
       setError(err instanceof Error ? err.message : 'Failed to get an answer.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCopyAnswer = async (answer: string, index: number) => {
+    try {
+      await navigator.clipboard.writeText(answer);
+      setCopiedTurnIndex(index);
+      window.setTimeout(() => {
+        setCopiedTurnIndex((current) => (current === index ? null : current));
+      }, 1500);
+    } catch {
+      // Clipboard access denied or unavailable — nothing to recover here.
     }
   };
 
@@ -182,6 +195,17 @@ export function AskQuestionDialog({
                     {normalizeMathMarkdown(turn.answer)}
                   </ReactMarkdown>
                 </div>
+                <button
+                  onClick={() => void handleCopyAnswer(turn.answer, index)}
+                  className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                >
+                  {copiedTurnIndex === index ? (
+                    <Check size={10} strokeWidth={2} />
+                  ) : (
+                    <Copy size={10} strokeWidth={2} />
+                  )}
+                  {copiedTurnIndex === index ? 'Copied' : 'Copy'}
+                </button>
               </div>
             ))}
 
