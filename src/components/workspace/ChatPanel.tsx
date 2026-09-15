@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown, SquarePen, RefreshCw } from 'lucide-react';
+import { Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown, SquarePen, RefreshCw, MessageCircleQuestion } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { DEFAULT_AI_PROVIDER } from '@/lib/ai-providers/config';
 import { MarkdownPreviewDialog } from '@/components/common/MarkdownPreviewDialog';
+import { AskQuestionDialog } from '@/components/workspace/AskQuestionDialog';
 import { buildSessionSummaryMarkdown, getSessionSummaryMarkdownFileName } from '@/lib/session-summary-markdown';
 import { useWorkspace } from '@/lib/workspace-store';
 import { normalizeMathMarkdown } from '@/lib/markdown-math';
@@ -136,6 +137,8 @@ export function ChatPanel() {
   const [chatFontSize, setChatFontSize] = useState(DEFAULT_CHAT_FONT_SIZE);
   const [newChatLoading, setNewChatLoading] = useState(false);
   const [newChatError, setNewChatError] = useState('');
+  const [selectionMenu, setSelectionMenu] = useState<{ text: string; x: number; y: number } | null>(null);
+  const [askQuestionSelection, setAskQuestionSelection] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const skipSessionHydrationRef = useRef<string | null>(null);
@@ -434,6 +437,63 @@ export function ChatPanel() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    const updateSelectionMenu = (event: MouseEvent | KeyboardEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('[data-ask-question-menu="true"]')) {
+        return;
+      }
+
+      const selection = window.getSelection();
+
+      if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+        setSelectionMenu(null);
+        return;
+      }
+
+      const text = selection.toString().trim();
+      if (!text) {
+        setSelectionMenu(null);
+        return;
+      }
+
+      const anchorNode = selection.anchorNode;
+      const anchorElement = anchorNode instanceof Element ? anchorNode : anchorNode?.parentElement;
+      const scopeElement = anchorElement?.closest('[data-assistant-selectable="true"]');
+      if (!scopeElement) {
+        setSelectionMenu(null);
+        return;
+      }
+
+      const rect = selection.getRangeAt(0).getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) {
+        setSelectionMenu(null);
+        return;
+      }
+
+      setSelectionMenu({
+        text,
+        x: Math.min(Math.max(rect.left + rect.width / 2, 80), window.innerWidth - 80),
+        y: Math.max(rect.top, 48),
+      });
+    };
+
+    document.addEventListener('mouseup', updateSelectionMenu);
+    document.addEventListener('keyup', updateSelectionMenu);
+
+    return () => {
+      document.removeEventListener('mouseup', updateSelectionMenu);
+      document.removeEventListener('keyup', updateSelectionMenu);
+    };
+  }, []);
+
+  const handleOpenAskQuestion = () => {
+    if (!selectionMenu) return;
+    setAskQuestionSelection(selectionMenu.text);
+    setSelectionMenu(null);
+    window.getSelection()?.removeAllRanges();
+  };
 
   useEffect(() => {
     const textarea = inputRef.current;
@@ -1162,6 +1222,7 @@ export function ChatPanel() {
                   <div
                     className="chat-markdown font-editorial text-on-surface"
                     style={assistantFontStyle}
+                    data-assistant-selectable="true"
                   >
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm, remarkMath]}
@@ -1336,6 +1397,32 @@ export function ChatPanel() {
         confirmLabel="Download Markdown"
         onCancel={() => setSummaryExportOpen(false)}
         onConfirm={handleSummaryExport}
+      />
+
+      {selectionMenu && (
+        <div
+          data-ask-question-menu="true"
+          className="fixed z-50 -translate-x-1/2 -translate-y-full pb-2"
+          style={{ left: selectionMenu.x, top: selectionMenu.y }}
+        >
+          <button
+            onClick={handleOpenAskQuestion}
+            className="flex items-center gap-1.5 rounded-lg bg-on-surface px-2.5 py-1.5 text-[11px] font-medium text-surface-container-lowest shadow-ambient transition-colors hover:opacity-90"
+          >
+            <MessageCircleQuestion size={12} strokeWidth={2} />
+            Ask Question
+          </button>
+        </div>
+      )}
+
+      <AskQuestionDialog
+        open={askQuestionSelection !== null}
+        selectedText={askQuestionSelection ?? ''}
+        folderPath={activeSessionFolder}
+        sessionId={activeSessionId}
+        model={selectedModel}
+        currentPdfPath={activeSessionKind === 'pdf' ? (activeSessionPdfPath || activePdf?.path || null) : (activePdf?.path || null)}
+        onClose={() => setAskQuestionSelection(null)}
       />
     </div>
   );
