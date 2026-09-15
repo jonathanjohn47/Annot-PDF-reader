@@ -9,6 +9,7 @@ import {
   ResolvedCommand,
   resolveExecutable,
 } from '@/lib/command-runtime';
+import { buildAnnotPrompt } from '@/lib/prompt-context';
 
 export interface ExecResult {
   codexSessionId: string;
@@ -62,50 +63,11 @@ interface ParsedEvent {
 
 let resolvedCodexExecutablePromise: Promise<ResolvedCommand> | null = null;
 
-function buildPrompt({
-  folderPath,
-  sessionKind,
-  prompt,
-  currentPdfPath,
-  selectedText,
-  screenshotPath,
-}: Omit<RunTurnInput, 'codexSessionId' | 'model'>): string {
-  const workspaceRoot = getWorkspaceRoot();
-  const contextLines = [
-    'Annot session context:',
-    `- Workspace root: ${workspaceRoot}`,
-    `- Current session folder: ${folderPath || '.'}`,
-    `- Session type: ${sessionKind === 'pdf' ? 'PDF-focused reading session' : 'Folder-wide research session'}`,
-    currentPdfPath ? `- Current PDF open in the viewer: ${currentPdfPath}` : '- No PDF is currently open in the viewer.',
-    ...(selectedText?.trim()
-      ? [
-          '- The user has selected the following text in the PDF viewer. Treat it as the primary focus of their request unless the request clearly says otherwise:',
-          '"""',
-          selectedText.trim(),
-          '"""',
-        ]
-      : []),
-    ...(screenshotPath?.trim()
-      ? [
-          `- The user captured a screenshot region from the PDF viewer (likely a math equation, diagram, or figure) at this path: ${screenshotPath.trim()}`,
-          '- View this image before answering, and treat it as the primary focus of their request unless the request clearly says otherwise.',
-        ]
-      : []),
-    sessionKind === 'pdf'
-      ? '- Treat the current PDF as the primary document for this conversation. Only branch out when it materially helps.'
-      : '- Prefer the current folder first, but you may inspect other files in the workspace if needed.',
-    '- When writing math, wrap standalone equations in \\[ ... \\] (or $$ ... $$). Do not emit bare equation lines.',
-    '- Wrap inline math in \\( ... \\) or $ ... $. Do not leave LaTeX commands bare inside prose.',
-    '- Keep inline variables or short expressions inline, for example `x`, `M_t`, or `alpha_t`.',
-    '- Use tools and shell commands silently when needed.',
-    '- In your final answer to the user, do not include progress updates, tool narration, or chain-of-thought.',
-    '- The final answer should contain only the user-facing result.',
-    '',
-    'User request:',
-    prompt,
-  ];
-
-  return contextLines.join('\n');
+function buildPrompt(input: Omit<RunTurnInput, 'codexSessionId' | 'model'>): string {
+  return buildAnnotPrompt(
+    input,
+    'View this image before answering, and treat it as the primary focus of their request unless the request clearly says otherwise.',
+  );
 }
 
 function getCodexExecutableCandidates(): string[] {
