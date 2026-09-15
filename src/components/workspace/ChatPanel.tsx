@@ -157,7 +157,7 @@ export function ChatPanel() {
   const activeSessionIdRef = useRef<string | null>(null);
   const sessionUiMapRef = useRef<Record<string, SessionUiState>>({});
 
-  const finalizeChatScreenshot = useCallback(async (rect: { x: number; y: number; width: number; height: number }) => {
+  const finalizeChatScreenshot = useCallback(async (viewportRect: { x: number; y: number; width: number; height: number }) => {
     const container = messagesContainerRef.current;
     if (!container || !activeSessionFolder) {
       return;
@@ -167,23 +167,36 @@ export function ChatPanel() {
     setChatScreenshotError('');
 
     try {
+      const bounds = container.getBoundingClientRect();
+      // html2canvas rasterizes only the currently visible (scrolled-into-view)
+      // portion of an overflow:auto element, i.e. its client box — so the crop
+      // rect must be expressed in that same client-relative space, not the
+      // full scrollable content space.
+      const rectX = Math.max(0, viewportRect.x - bounds.left);
+      const rectY = Math.max(0, viewportRect.y - bounds.top);
+      const rectWidth = Math.min(viewportRect.width, container.clientWidth - rectX);
+      const rectHeight = Math.min(viewportRect.height, container.clientHeight - rectY);
+      if (rectWidth <= 0 || rectHeight <= 0) {
+        throw new Error('Selected region is outside the chat panel.');
+      }
+
       const html2canvas = (await import('html2canvas')).default;
       const fullCanvas = await html2canvas(container, { backgroundColor: '#ffffff', useCORS: true });
-      const scaleX = fullCanvas.width / container.scrollWidth;
-      const scaleY = fullCanvas.height / container.scrollHeight;
+      const scaleX = fullCanvas.width / container.clientWidth;
+      const scaleY = fullCanvas.height / container.clientHeight;
 
       const cropCanvas = document.createElement('canvas');
-      cropCanvas.width = Math.max(1, Math.round(rect.width * scaleX));
-      cropCanvas.height = Math.max(1, Math.round(rect.height * scaleY));
+      cropCanvas.width = Math.max(1, Math.round(rectWidth * scaleX));
+      cropCanvas.height = Math.max(1, Math.round(rectHeight * scaleY));
       const ctx = cropCanvas.getContext('2d');
       if (!ctx) throw new Error('Could not prepare screenshot canvas.');
 
       ctx.drawImage(
         fullCanvas,
-        rect.x * scaleX,
-        rect.y * scaleY,
-        rect.width * scaleX,
-        rect.height * scaleY,
+        rectX * scaleX,
+        rectY * scaleY,
+        rectWidth * scaleX,
+        rectHeight * scaleY,
         0,
         0,
         cropCanvas.width,
@@ -216,12 +229,10 @@ export function ChatPanel() {
 
     const handleMouseMove = (event: MouseEvent) => {
       const drag = chatScreenshotDragRef.current;
-      const container = messagesContainerRef.current;
-      if (!drag || !container) return;
+      if (!drag) return;
 
-      const bounds = container.getBoundingClientRect();
-      const currentX = event.clientX - bounds.left + container.scrollLeft;
-      const currentY = event.clientY - bounds.top + container.scrollTop;
+      const currentX = event.clientX;
+      const currentY = event.clientY;
 
       setChatScreenshotDraft({
         x: Math.min(drag.startX, currentX),
@@ -257,13 +268,10 @@ export function ChatPanel() {
 
   const handleChatScreenshotMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
     if (!chatScreenshotMode || chatScreenshotSaving) return;
-    const container = messagesContainerRef.current;
-    if (!container) return;
 
     event.preventDefault();
-    const bounds = container.getBoundingClientRect();
-    const startX = event.clientX - bounds.left + container.scrollLeft;
-    const startY = event.clientY - bounds.top + container.scrollTop;
+    const startX = event.clientX;
+    const startY = event.clientY;
     chatScreenshotDragRef.current = { startX, startY };
     setChatScreenshotDraft({ x: startX, y: startY, width: 0, height: 0 });
   };
@@ -1240,20 +1248,20 @@ export function ChatPanel() {
       <div
         ref={messagesContainerRef}
         onMouseDown={handleChatScreenshotMouseDown}
-        className={`relative flex-1 overflow-y-auto px-4 space-y-3 ${
+        className={`flex-1 overflow-y-auto px-4 space-y-3 ${
           chatScreenshotMode ? 'cursor-crosshair select-none' : ''
         }`}
       >
         {chatScreenshotDraft && (
           <div
             style={{
-              position: 'absolute',
+              position: 'fixed',
               left: chatScreenshotDraft.x,
               top: chatScreenshotDraft.y,
               width: chatScreenshotDraft.width,
               height: chatScreenshotDraft.height,
             }}
-            className="pointer-events-none z-10 border-2 border-primary bg-primary/10"
+            className="pointer-events-none z-[70] border-2 border-primary bg-primary/10"
           />
         )}
         {!activeSessionId && !sessionLoading && (
