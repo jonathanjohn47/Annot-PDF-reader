@@ -26,9 +26,10 @@ export async function POST(req: NextRequest) {
       screenshotPath?: string | null;
     };
 
-    if (!folderPath || !sessionId || !question?.trim() || !selectedText?.trim()) {
+    const trimmedSelectedText = selectedText?.trim() || '';
+    if (!folderPath || !sessionId || !question?.trim() || (!trimmedSelectedText && !screenshotPath)) {
       return NextResponse.json(
-        { error: 'folderPath, sessionId, question, and selectedText are required' },
+        { error: 'folderPath, sessionId, question, and either selectedText or screenshotPath are required' },
         { status: 400 },
       );
     }
@@ -52,14 +53,17 @@ export async function POST(req: NextRequest) {
     // available as context, without persisting this side Q&A into the visible
     // chat transcript.
     const resolvedPdfPath = currentPdfPath ?? session.pdfPath ?? null;
+    const focusDescription = trimmedSelectedText
+      ? 'a passage from your previous reply'
+      : 'a screenshot region the user just captured';
     const turn = await runtime.runTurn({
       providerSessionId: session.providerSessionId,
       model: resolvedModel,
       folderPath,
-      prompt: `The user is asking a follow-up about a passage from your previous reply — this may be a clarifying question, or a request to save something as a note (in which case follow the note-saving directive above). Focus on that passage.\n\nRequest: ${question.trim()}`,
+      prompt: `The user is asking a follow-up about ${focusDescription} — this may be a clarifying question, or a request to save something as a note (in which case follow the note-saving directive above). Focus on that.\n\nRequest: ${question.trim()}`,
       sessionKind: session.sessionKind,
       currentPdfPath: resolvedPdfPath,
-      selectedText: selectedText.trim(),
+      selectedText: trimmedSelectedText || null,
       screenshotPath: screenshotPath ?? null,
     });
 

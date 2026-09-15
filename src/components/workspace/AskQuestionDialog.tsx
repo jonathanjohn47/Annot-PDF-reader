@@ -180,6 +180,8 @@ export function AskQuestionDialog({
     return null;
   }
 
+  const hasPassage = Boolean(selectedText.trim());
+
   const handleQuoteSelection = () => {
     if (!quotePopup) return;
     setQuotedText(quotePopup.text);
@@ -276,15 +278,39 @@ export function AskQuestionDialog({
         </div>
 
         <div ref={contentRef} className="flex-1 overflow-y-auto px-5 py-4">
-          <div className="rounded-xl bg-surface-container px-4 py-3">
-            <div className="text-[10px] font-medium uppercase tracking-widest text-on-surface-variant">
-              Selected passage
+          {hasPassage && (
+            <div className="rounded-xl bg-surface-container px-4 py-3">
+              <div className="text-[10px] font-medium uppercase tracking-widest text-on-surface-variant">
+                Selected passage
+              </div>
+              <AskMarkdown
+                content={selectedText}
+                className="chat-markdown font-editorial mt-2 text-sm text-on-surface"
+              />
             </div>
-            <AskMarkdown
-              content={selectedText}
-              className="chat-markdown font-editorial mt-2 text-sm text-on-surface"
-            />
-          </div>
+          )}
+
+          {screenshot && (
+            <div className={`rounded-xl bg-surface-container px-4 py-3 ${hasPassage ? 'mt-3' : ''}`}>
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] font-medium uppercase tracking-widest text-on-surface-variant">
+                  Screenshot
+                </div>
+                <button
+                  onClick={() => setScreenshot(null)}
+                  className="rounded p-0.5 text-on-surface-variant hover:bg-surface-container-high"
+                  title="Remove screenshot"
+                >
+                  <X size={11} strokeWidth={2} />
+                </button>
+              </div>
+              <img
+                src={screenshot.dataUrl}
+                alt="Captured screenshot"
+                className="mt-2 max-h-64 w-full rounded-lg object-contain"
+              />
+            </div>
+          )}
 
           {error && (
             <div className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-800">
@@ -331,8 +357,9 @@ export function AskQuestionDialog({
 
             {turns.length === 0 && !loading && (
               <p className="text-xs text-on-surface-variant">
-                Ask anything about the passage above — the full PDF and chat history are used as context.
-                Select any text here to quote it, or attach a screenshot from the PDF.
+                {hasPassage
+                  ? 'Ask anything about the passage above — the full PDF and chat history are used as context. Select any text here to quote it, or attach a screenshot from the PDF.'
+                  : 'Ask anything about the screenshot above, or attach one from the PDF — the full PDF and chat history are used as context.'}
               </p>
             )}
           </div>
@@ -340,34 +367,19 @@ export function AskQuestionDialog({
           <div ref={endRef} />
         </div>
 
-        {(quotedText || screenshot) && (
+        {quotedText && (
           <div className="flex flex-wrap gap-2 border-t border-outline-variant/15 px-5 pt-3">
-            {quotedText && (
-              <div className="flex max-w-full items-center gap-1.5 rounded-lg bg-surface-container px-2.5 py-1.5 text-xs text-on-surface-variant">
-                <Quote size={11} strokeWidth={2} className="shrink-0" />
-                <span className="truncate italic">{quotedText}</span>
-                <button
-                  onClick={() => setQuotedText(null)}
-                  className="shrink-0 rounded p-0.5 hover:bg-surface-container-high"
-                  title="Remove quote"
-                >
-                  <X size={10} strokeWidth={2} />
-                </button>
-              </div>
-            )}
-            {screenshot && (
-              <div className="flex items-center gap-1.5 rounded-lg bg-surface-container px-2 py-1.5 text-xs text-on-surface-variant">
-                <img src={screenshot.dataUrl} alt="Attached screenshot" className="h-6 w-6 rounded object-cover" />
-                <span>Screenshot attached</span>
-                <button
-                  onClick={() => setScreenshot(null)}
-                  className="shrink-0 rounded p-0.5 hover:bg-surface-container-high"
-                  title="Remove screenshot"
-                >
-                  <X size={10} strokeWidth={2} />
-                </button>
-              </div>
-            )}
+            <div className="flex max-w-full items-center gap-1.5 rounded-lg bg-surface-container px-2.5 py-1.5 text-xs text-on-surface-variant">
+              <Quote size={11} strokeWidth={2} className="shrink-0" />
+              <span className="truncate italic">{quotedText}</span>
+              <button
+                onClick={() => setQuotedText(null)}
+                className="shrink-0 rounded p-0.5 hover:bg-surface-container-high"
+                title="Remove quote"
+              >
+                <X size={10} strokeWidth={2} />
+              </button>
+            </div>
           </div>
         )}
 

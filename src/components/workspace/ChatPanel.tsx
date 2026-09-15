@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown, SquarePen, RefreshCw, Copy, Check, MessageCircleQuestion } from 'lucide-react';
+import { Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown, SquarePen, RefreshCw, Copy, Check, MessageCircleQuestion, Camera } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -118,6 +118,8 @@ export function ChatPanel() {
     setSelectedText,
     screenshot,
     setScreenshot,
+    screenshotMode,
+    setScreenshotMode,
   } = useWorkspace();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -140,6 +142,22 @@ export function ChatPanel() {
   const [newChatError, setNewChatError] = useState('');
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [askWholeMessage, setAskWholeMessage] = useState<string | null>(null);
+  const [awaitingAskScreenshot, setAwaitingAskScreenshot] = useState(false);
+
+  useEffect(() => {
+    if (awaitingAskScreenshot && !screenshotMode) {
+      setAwaitingAskScreenshot(false);
+      if (screenshot) {
+        setAskWholeMessage('');
+      }
+    }
+  }, [awaitingAskScreenshot, screenshotMode, screenshot]);
+
+  const handleCaptureScreenshotForAsk = useCallback(() => {
+    if (!activePdf) return;
+    setAwaitingAskScreenshot(true);
+    setScreenshotMode(true);
+  }, [activePdf, setScreenshotMode]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const skipSessionHydrationRef = useRef<string | null>(null);
@@ -1008,6 +1026,14 @@ export function ChatPanel() {
           {renderSummaryStatus()}
         </div>
         <div className="flex items-center gap-1">
+          <button
+            onClick={handleCaptureScreenshotForAsk}
+            disabled={!activePdf}
+            className="flex items-center gap-1 rounded-md bg-surface-container px-2.5 py-1.5 text-[11px] font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-50"
+            title={activePdf ? 'Capture a screenshot to ask about' : 'Open a PDF to capture a screenshot'}
+          >
+            <Camera size={11} strokeWidth={2} />
+          </button>
           <button
             onClick={() => void handleNewChat()}
             disabled={!activeSessionFolder || !activeSessionKind || newChatLoading}
