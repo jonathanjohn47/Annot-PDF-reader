@@ -15,6 +15,7 @@ export async function POST(req: NextRequest) {
       selectedText,
       model,
       currentPdfPath,
+      screenshotPath,
     } = body as {
       folderPath?: string;
       sessionId?: string;
@@ -22,6 +23,7 @@ export async function POST(req: NextRequest) {
       selectedText?: string;
       model?: string;
       currentPdfPath?: string | null;
+      screenshotPath?: string | null;
     };
 
     if (!folderPath || !sessionId || !question?.trim() || !selectedText?.trim()) {
@@ -58,7 +60,7 @@ export async function POST(req: NextRequest) {
       sessionKind: session.sessionKind,
       currentPdfPath: resolvedPdfPath,
       selectedText: selectedText.trim(),
-      screenshotPath: null,
+      screenshotPath: screenshotPath ?? null,
     });
 
     const { cleanedContent, note } = extractNoteDirective(turn.content);

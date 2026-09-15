@@ -67,7 +67,17 @@ function setStoredHighlights(pdfPath: string, nextHighlights: Highlight[]): void
 }
 
 export function PdfViewer() {
-  const { activePdf, closePdf, activeSessionFolder, chatOpen, toggleChat, setSelectedText, setScreenshot } = useWorkspace();
+  const {
+    activePdf,
+    closePdf,
+    activeSessionFolder,
+    chatOpen,
+    toggleChat,
+    setSelectedText,
+    setScreenshot,
+    screenshotMode,
+    setScreenshotMode,
+  } = useWorkspace();
   const activePdfPath = activePdf?.path ?? '';
   const [zoom, setZoom] = useState(125);
   const [pageNumber, setPageNumber] = useState(1);
@@ -76,7 +86,6 @@ export function PdfViewer() {
   const [containerWidth, setContainerWidth] = useState(720);
   const [highlightMode, setHighlightMode] = useState<HighlightMode>(null);
   const [eraseMode, setEraseMode] = useState(false);
-  const [screenshotMode, setScreenshotMode] = useState(false);
   const [screenshotDraft, setScreenshotDraft] = useState<{
     targetPage: number;
     x: number;
@@ -946,7 +955,7 @@ export function PdfViewer() {
             onClick={() => {
               setHighlightMode(null);
               setEraseMode(false);
-              setScreenshotMode((current) => !current);
+              setScreenshotMode(!screenshotMode);
             }}
             className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${
               screenshotMode

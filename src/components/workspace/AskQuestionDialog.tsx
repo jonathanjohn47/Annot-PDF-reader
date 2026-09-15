@@ -1,17 +1,19 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Check, Copy, Loader2, MessageCircleQuestion, Send, X } from 'lucide-react';
+import { Camera, Check, Copy, Loader2, MessageCircleQuestion, Quote, Send, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
 import { normalizeMathMarkdown } from '@/lib/markdown-math';
+import { useWorkspace } from '@/lib/workspace-store';
 
 interface AskQuestionTurn {
   question: string;
   answer: string;
+  quotedText?: string;
 }
 
 interface AskQuestionDialogProps {
@@ -75,12 +77,17 @@ export function AskQuestionDialog({
   currentPdfPath,
   onClose,
 }: AskQuestionDialogProps) {
+  const { activePdf, screenshot, setScreenshot, screenshotMode, setScreenshotMode } = useWorkspace();
   const [question, setQuestion] = useState('');
   const [turns, setTurns] = useState<AskQuestionTurn[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [copiedTurnIndex, setCopiedTurnIndex] = useState<number | null>(null);
+  const [quotedText, setQuotedText] = useState<string | null>(null);
+  const [quotePopup, setQuotePopup] = useState<{ text: string; top: number; left: number } | null>(null);
+  const [awaitingScreenshot, setAwaitingScreenshot] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) {
@@ -88,6 +95,9 @@ export function AskQuestionDialog({
       setTurns([]);
       setError('');
       setLoading(false);
+      setQuotedText(null);
+      setQuotePopup(null);
+      setAwaitingScreenshot(false);
     }
   }, [open, selectedText]);
 
@@ -96,27 +106,105 @@ export function AskQuestionDialog({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        if (awaitingScreenshot) {
+          setAwaitingScreenshot(false);
+          setScreenshotMode(false);
+          return;
+        }
         onClose();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, open]);
+  }, [awaitingScreenshot, onClose, open, setScreenshotMode]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [turns, loading]);
 
+  // While screenshot capture is in progress on the PDF viewer underneath,
+  // the dialog hides itself (without unmounting, so turns/question survive)
+  // and waits for the viewer to drop out of screenshot mode when done.
+  useEffect(() => {
+    if (awaitingScreenshot && !screenshotMode) {
+      setAwaitingScreenshot(false);
+    }
+  }, [awaitingScreenshot, screenshotMode]);
+
+  useEffect(() => {
+    if (!open || awaitingScreenshot) return;
+
+    const handleSelectionChange = () => {
+      const selection = window.getSelection();
+      const text = selection?.toString().trim();
+      if (!selection || !text || selection.rangeCount === 0) {
+        return;
+      }
+
+      const anchorNode = selection.anchorNode;
+      const container = contentRef.current;
+      if (!container || !anchorNode || !container.contains(anchorNode)) {
+        return;
+      }
+
+      const rect = selection.getRangeAt(0).getBoundingClientRect();
+      if (!rect || (rect.width === 0 && rect.height === 0)) {
+        return;
+      }
+
+      setQuotePopup({
+        text,
+        top: Math.max(8, rect.top - 36),
+        left: Math.min(Math.max(8, rect.left), window.innerWidth - 140),
+      });
+    };
+
+    const handleMouseDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('[data-ask-quote-popup="true"]')) return;
+      setQuotePopup(null);
+    };
+
+    document.addEventListener('mouseup', handleSelectionChange);
+    document.addEventListener('keyup', handleSelectionChange);
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => {
+      document.removeEventListener('mouseup', handleSelectionChange);
+      document.removeEventListener('keyup', handleSelectionChange);
+      document.removeEventListener('mousedown', handleMouseDown);
+    };
+  }, [awaitingScreenshot, open]);
+
   if (!open) {
     return null;
   }
+
+  const handleQuoteSelection = () => {
+    if (!quotePopup) return;
+    setQuotedText(quotePopup.text);
+    setQuotePopup(null);
+    window.getSelection()?.removeAllRanges();
+  };
+
+  const handleCaptureScreenshot = () => {
+    if (!activePdf) return;
+    setAwaitingScreenshot(true);
+    setScreenshotMode(true);
+  };
 
   const handleAsk = async () => {
     const trimmedQuestion = question.trim();
     if (!trimmedQuestion || loading || !folderPath || !sessionId) return;
 
+    const activeQuote = quotedText;
+    const activeScreenshot = screenshot;
+    const promptQuestion = activeQuote
+      ? `Regarding this highlighted part: "${activeQuote}"\n\n${trimmedQuestion}`
+      : trimmedQuestion;
+
     setQuestion('');
+    setQuotedText(null);
     setLoading(true);
     setError('');
 
@@ -127,10 +215,11 @@ export function AskQuestionDialog({
         body: JSON.stringify({
           folderPath,
           sessionId,
-          question: trimmedQuestion,
+          question: promptQuestion,
           selectedText,
           model,
           currentPdfPath,
+          screenshotPath: activeScreenshot?.path || null,
         }),
       });
       const data = await res.json();
@@ -139,7 +228,13 @@ export function AskQuestionDialog({
         throw new Error(typeof data?.error === 'string' ? data.error : 'Failed to get an answer.');
       }
 
-      setTurns((current) => [...current, { question: trimmedQuestion, answer: data.answer as string }]);
+      setTurns((current) => [
+        ...current,
+        { question: trimmedQuestion, answer: data.answer as string, quotedText: activeQuote ?? undefined },
+      ]);
+      if (activeScreenshot) {
+        setScreenshot(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to get an answer.');
     } finally {
@@ -160,7 +255,11 @@ export function AskQuestionDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/35 px-4 py-6">
+    <div
+      className={`fixed inset-0 z-[60] flex items-center justify-center bg-black/35 px-4 py-6 ${
+        awaitingScreenshot ? 'pointer-events-none bg-transparent opacity-0' : ''
+      }`}
+    >
       <div className="flex h-full max-h-[80vh] w-full max-w-2xl flex-col rounded-2xl border border-outline-variant/20 bg-surface-container-lowest shadow-ambient">
         <div className="flex items-start justify-between gap-4 border-b border-outline-variant/15 px-5 py-4">
           <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
@@ -176,7 +275,7 @@ export function AskQuestionDialog({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div ref={contentRef} className="flex-1 overflow-y-auto px-5 py-4">
           <div className="rounded-xl bg-surface-container px-4 py-3">
             <div className="text-[10px] font-medium uppercase tracking-widest text-on-surface-variant">
               Selected passage
@@ -196,6 +295,13 @@ export function AskQuestionDialog({
           <div className="mt-4 space-y-4">
             {turns.map((turn, index) => (
               <div key={index} className="space-y-2">
+                {turn.quotedText && (
+                  <div className="flex justify-end">
+                    <div className="max-w-[90%] rounded-lg border-l-2 border-primary/50 bg-surface-container px-2.5 py-1.5 text-xs italic text-on-surface-variant">
+                      &ldquo;{turn.quotedText}&rdquo;
+                    </div>
+                  </div>
+                )}
                 <div className="flex justify-end">
                   <div className="max-w-[90%] rounded-2xl rounded-tr-sm bg-primary px-3.5 py-2.5 text-sm text-on-primary">
                     {turn.question}
@@ -226,6 +332,7 @@ export function AskQuestionDialog({
             {turns.length === 0 && !loading && (
               <p className="text-xs text-on-surface-variant">
                 Ask anything about the passage above — the full PDF and chat history are used as context.
+                Select any text here to quote it, or attach a screenshot from the PDF.
               </p>
             )}
           </div>
@@ -233,7 +340,46 @@ export function AskQuestionDialog({
           <div ref={endRef} />
         </div>
 
+        {(quotedText || screenshot) && (
+          <div className="flex flex-wrap gap-2 border-t border-outline-variant/15 px-5 pt-3">
+            {quotedText && (
+              <div className="flex max-w-full items-center gap-1.5 rounded-lg bg-surface-container px-2.5 py-1.5 text-xs text-on-surface-variant">
+                <Quote size={11} strokeWidth={2} className="shrink-0" />
+                <span className="truncate italic">{quotedText}</span>
+                <button
+                  onClick={() => setQuotedText(null)}
+                  className="shrink-0 rounded p-0.5 hover:bg-surface-container-high"
+                  title="Remove quote"
+                >
+                  <X size={10} strokeWidth={2} />
+                </button>
+              </div>
+            )}
+            {screenshot && (
+              <div className="flex items-center gap-1.5 rounded-lg bg-surface-container px-2 py-1.5 text-xs text-on-surface-variant">
+                <img src={screenshot.dataUrl} alt="Attached screenshot" className="h-6 w-6 rounded object-cover" />
+                <span>Screenshot attached</span>
+                <button
+                  onClick={() => setScreenshot(null)}
+                  className="shrink-0 rounded p-0.5 hover:bg-surface-container-high"
+                  title="Remove screenshot"
+                >
+                  <X size={10} strokeWidth={2} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex items-end gap-2 border-t border-outline-variant/15 px-5 py-3">
+          <button
+            onClick={handleCaptureScreenshot}
+            disabled={!activePdf || loading}
+            title={activePdf ? 'Attach a screenshot region from the PDF' : 'Open a PDF to attach a screenshot'}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:opacity-40"
+          >
+            <Camera size={14} strokeWidth={2} />
+          </button>
           <textarea
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
@@ -257,6 +403,18 @@ export function AskQuestionDialog({
           </button>
         </div>
       </div>
+
+      {quotePopup && (
+        <button
+          data-ask-quote-popup="true"
+          onClick={handleQuoteSelection}
+          style={{ position: 'fixed', top: quotePopup.top, left: quotePopup.left, zIndex: 70 }}
+          className="flex items-center gap-1 rounded-full bg-on-surface px-2.5 py-1.5 text-[11px] font-medium text-surface-container-lowest shadow-ambient"
+        >
+          <Quote size={10} strokeWidth={2} />
+          Quote
+        </button>
+      )}
     </div>
   );
 }

@@ -28,6 +28,8 @@ export interface WorkspaceState {
   selectedText: string | null;
   // Screenshot region captured from the PDF viewer, pending attachment to a chat query
   screenshot: { path: string; dataUrl: string } | null;
+  // Whether the PDF viewer is in screenshot-capture (drag-to-select) mode
+  screenshotMode: boolean;
 }
 
 export interface WorkspaceActions {
@@ -41,6 +43,7 @@ export interface WorkspaceActions {
   refreshTree: () => Promise<TreeNode | null>;
   setSelectedText: (text: string | null) => void;
   setScreenshot: (screenshot: { path: string; dataUrl: string } | null) => void;
+  setScreenshotMode: (active: boolean) => void;
 }
 
 export type WorkspaceContextType = WorkspaceState & WorkspaceActions;
