@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { appendMessage, getSession, updateSession } from '@/lib/annot-sessions';
 import { getProviderRuntime } from '@/lib/ai-providers';
+import { createPdfNote } from '@/lib/pdf-notes';
+import { appendNoteSavedConfirmation, extractNoteDirective } from '@/lib/note-directive';
 
 export async function POST(req: NextRequest) {
   try {
@@ -64,13 +66,14 @@ export async function POST(req: NextRequest) {
 
         void (async () => {
           try {
+            const resolvedPdfPath = currentPdfPath ?? session.pdfPath ?? null;
             const turn = await runtime.runTurn({
               providerSessionId: session.providerSessionId,
               model: resolvedModel,
               folderPath,
               prompt: prompt.trim(),
               sessionKind: session.sessionKind,
-              currentPdfPath: currentPdfPath ?? session.pdfPath ?? null,
+              currentPdfPath: resolvedPdfPath,
               selectedText: selectedText ?? null,
               screenshotPath: screenshotPath ?? null,
             }, {
@@ -79,10 +82,18 @@ export async function POST(req: NextRequest) {
               },
             });
 
+            const { cleanedContent, note } = extractNoteDirective(turn.content);
+            let finalContent = cleanedContent;
+
+            if (note && resolvedPdfPath) {
+              await createPdfNote(resolvedPdfPath, note.title, note.body);
+              finalContent = appendNoteSavedConfirmation(cleanedContent, note.title);
+            }
+
             const assistantMessage = {
               id: `a-${Date.now()}`,
               role: 'assistant' as const,
-              content: turn.content,
+              content: finalContent,
               timestamp: new Date().toISOString(),
               model: resolvedModel,
             };

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getSession } from '@/lib/annot-sessions';
 import { getProviderRuntime } from '@/lib/ai-providers';
+import { createPdfNote } from '@/lib/pdf-notes';
+import { appendNoteSavedConfirmation, extractNoteDirective } from '@/lib/note-directive';
 
 export async function POST(req: NextRequest) {
   try {
@@ -47,18 +49,27 @@ export async function POST(req: NextRequest) {
     // Resumes the existing provider session so the full PDF + chat history is
     // available as context, without persisting this side Q&A into the visible
     // chat transcript.
+    const resolvedPdfPath = currentPdfPath ?? session.pdfPath ?? null;
     const turn = await runtime.runTurn({
       providerSessionId: session.providerSessionId,
       model: resolvedModel,
       folderPath,
-      prompt: `The user is asking a clarifying question about a passage from your previous reply. Answer only the question below, focused on that passage.\n\nQuestion: ${question.trim()}`,
+      prompt: `The user is asking a follow-up about a passage from your previous reply — this may be a clarifying question, or a request to save something as a note (in which case follow the note-saving directive above). Focus on that passage.\n\nRequest: ${question.trim()}`,
       sessionKind: session.sessionKind,
-      currentPdfPath: currentPdfPath ?? session.pdfPath ?? null,
+      currentPdfPath: resolvedPdfPath,
       selectedText: selectedText.trim(),
       screenshotPath: null,
     });
 
-    return NextResponse.json({ answer: turn.content }, {
+    const { cleanedContent, note } = extractNoteDirective(turn.content);
+    let finalAnswer = cleanedContent;
+
+    if (note && resolvedPdfPath) {
+      await createPdfNote(resolvedPdfPath, note.title, note.body);
+      finalAnswer = appendNoteSavedConfirmation(cleanedContent, note.title);
+    }
+
+    return NextResponse.json({ answer: finalAnswer }, {
       headers: { 'Cache-Control': 'no-store' },
     });
   } catch (error) {
