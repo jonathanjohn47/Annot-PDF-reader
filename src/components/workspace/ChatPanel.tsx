@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown, SquarePen, RefreshCw, Copy, Check, MessageCircleQuestion, Camera } from 'lucide-react';
+import { Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown, SquarePen, RefreshCw, Copy, Check, MessageCircleQuestion } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -140,161 +140,11 @@ export function ChatPanel() {
   const [newChatError, setNewChatError] = useState('');
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [askWholeMessage, setAskWholeMessage] = useState<string | null>(null);
-  const [chatScreenshotMode, setChatScreenshotMode] = useState(false);
-  const [chatScreenshotDraft, setChatScreenshotDraft] = useState<{
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  } | null>(null);
-  const [chatScreenshotSaving, setChatScreenshotSaving] = useState(false);
-  const [chatScreenshotError, setChatScreenshotError] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const chatScreenshotDragRef = useRef<{ startX: number; startY: number } | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const skipSessionHydrationRef = useRef<string | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
   const sessionUiMapRef = useRef<Record<string, SessionUiState>>({});
-
-  const finalizeChatScreenshot = useCallback(async (viewportRect: { x: number; y: number; width: number; height: number }) => {
-    const container = messagesContainerRef.current;
-    if (!container || !activeSessionFolder) {
-      return;
-    }
-
-    setChatScreenshotSaving(true);
-    setChatScreenshotError('');
-
-    try {
-      const bounds = container.getBoundingClientRect();
-      // html2canvas rasterizes only the currently visible (scrolled-into-view)
-      // portion of an overflow:auto element, i.e. its client box — so the crop
-      // rect must be expressed in that same client-relative space, not the
-      // full scrollable content space.
-      const rectX = Math.max(0, viewportRect.x - bounds.left);
-      const rectY = Math.max(0, viewportRect.y - bounds.top);
-      const rectWidth = Math.min(viewportRect.width, container.clientWidth - rectX);
-      const rectHeight = Math.min(viewportRect.height, container.clientHeight - rectY);
-      if (rectWidth <= 0 || rectHeight <= 0) {
-        throw new Error('Selected region is outside the chat panel.');
-      }
-
-      const scrollTop = container.scrollTop;
-      const scrollLeft = container.scrollLeft;
-      const html2canvas = (await import('html2canvas')).default;
-      const fullCanvas = await html2canvas(container, {
-        backgroundColor: '#ffffff',
-        useCORS: true,
-        // html2canvas's default custom DOM-walking renderer has known bugs
-        // clipping a nested overflow:auto/scroll element correctly — it can
-        // paint content that lies past the scrolled viewport. Delegate the
-        // actual paint to the browser's native renderer instead, via SVG
-        // <foreignObject>, which respects scroll clipping correctly.
-        foreignObjectRendering: true,
-        onclone: (_doc, clonedEl) => {
-          clonedEl.scrollTop = scrollTop;
-          clonedEl.scrollLeft = scrollLeft;
-        },
-      });
-      const scaleX = fullCanvas.width / container.clientWidth;
-      const scaleY = fullCanvas.height / container.clientHeight;
-
-      const cropCanvas = document.createElement('canvas');
-      cropCanvas.width = Math.max(1, Math.round(rectWidth * scaleX));
-      cropCanvas.height = Math.max(1, Math.round(rectHeight * scaleY));
-      const ctx = cropCanvas.getContext('2d');
-      if (!ctx) throw new Error('Could not prepare screenshot canvas.');
-
-      ctx.drawImage(
-        fullCanvas,
-        rectX * scaleX,
-        rectY * scaleY,
-        rectWidth * scaleX,
-        rectHeight * scaleY,
-        0,
-        0,
-        cropCanvas.width,
-        cropCanvas.height,
-      );
-
-      const dataUrl = cropCanvas.toDataURL('image/png');
-      const res = await fetch('/api/workspace/screenshot', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ folderPath: activeSessionFolder, imageDataUrl: dataUrl }),
-      });
-      const data = await res.json();
-
-      if (!res.ok || data?.error) {
-        throw new Error(typeof data?.error === 'string' ? data.error : 'Failed to save screenshot.');
-      }
-
-      setScreenshot({ path: data.path as string, dataUrl });
-      setAskWholeMessage('');
-    } catch (err) {
-      setChatScreenshotError(err instanceof Error ? err.message : 'Failed to capture screenshot.');
-    } finally {
-      setChatScreenshotSaving(false);
-      // Deferred until the capture itself is done: turning this off earlier
-      // removes the "screenshot mode" banner and reflows the (flex-1)
-      // messages panel mid-capture, shifting it out from under the geometry
-      // already captured for the crop.
-      setChatScreenshotMode(false);
-    }
-  }, [activeSessionFolder, setScreenshot]);
-
-  useEffect(() => {
-    if (!chatScreenshotMode) return;
-
-    const handleMouseMove = (event: MouseEvent) => {
-      const drag = chatScreenshotDragRef.current;
-      if (!drag) return;
-
-      const currentX = event.clientX;
-      const currentY = event.clientY;
-
-      setChatScreenshotDraft({
-        x: Math.min(drag.startX, currentX),
-        y: Math.min(drag.startY, currentY),
-        width: Math.abs(currentX - drag.startX),
-        height: Math.abs(currentY - drag.startY),
-      });
-    };
-
-    const handleMouseUp = () => {
-      const drag = chatScreenshotDragRef.current;
-      chatScreenshotDragRef.current = null;
-      if (!drag) return;
-
-      setChatScreenshotDraft((current) => {
-        if (current && current.width > 8 && current.height > 8) {
-          void finalizeChatScreenshot(current);
-        } else if (drag) {
-          setChatScreenshotError('Draw a larger rectangle to capture a screenshot.');
-          setChatScreenshotMode(false);
-        }
-        return null;
-      });
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [chatScreenshotMode, finalizeChatScreenshot]);
-
-  const handleChatScreenshotMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (!chatScreenshotMode || chatScreenshotSaving) return;
-
-    event.preventDefault();
-    const startX = event.clientX;
-    const startY = event.clientY;
-    chatScreenshotDragRef.current = { startX, startY };
-    setChatScreenshotDraft({ x: startX, y: startY, width: 0, height: 0 });
-  };
 
   const sessionLabel = activeSessionKind === 'pdf' ? 'PDF Session' : 'Folder Session';
   const exportSession = useMemo<Session>(() => ({
@@ -1159,25 +1009,6 @@ export function ChatPanel() {
         </div>
         <div className="flex items-center gap-1">
           <button
-            onClick={() => {
-              setChatScreenshotError('');
-              setChatScreenshotMode((current) => !current);
-            }}
-            disabled={chatScreenshotSaving}
-            className={`flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-              chatScreenshotMode
-                ? 'bg-primary text-on-primary'
-                : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
-            }`}
-            title={chatScreenshotMode ? 'Drag over the chat to capture a region' : 'Capture a screenshot from this chat'}
-          >
-            {chatScreenshotSaving ? (
-              <Loader2 size={11} className="animate-spin" />
-            ) : (
-              <Camera size={11} strokeWidth={2} />
-            )}
-          </button>
-          <button
             onClick={() => void handleNewChat()}
             disabled={!activeSessionFolder || !activeSessionKind || newChatLoading}
             className="flex items-center gap-1 rounded-md bg-surface-container px-2.5 py-1.5 text-[11px] font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-50"
@@ -1252,38 +1083,8 @@ export function ChatPanel() {
         </div>
       )}
 
-      {chatScreenshotError && (
-        <div className="mx-4 mb-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-800">
-          {chatScreenshotError}
-        </div>
-      )}
-
-      {chatScreenshotMode && (
-        <div className="mx-4 mb-2 rounded-lg bg-surface-container px-3 py-2 text-xs text-on-surface-variant">
-          Screenshot mode is on — drag over the chat below to capture a region.
-        </div>
-      )}
-
       {/* Messages */}
-      <div
-        ref={messagesContainerRef}
-        onMouseDown={handleChatScreenshotMouseDown}
-        className={`flex-1 overflow-y-auto px-4 space-y-3 ${
-          chatScreenshotMode ? 'cursor-crosshair select-none' : ''
-        }`}
-      >
-        {chatScreenshotDraft && (
-          <div
-            style={{
-              position: 'fixed',
-              left: chatScreenshotDraft.x,
-              top: chatScreenshotDraft.y,
-              width: chatScreenshotDraft.width,
-              height: chatScreenshotDraft.height,
-            }}
-            className="pointer-events-none z-[70] border-2 border-primary bg-primary/10"
-          />
-        )}
+      <div className="flex-1 overflow-y-auto px-4 space-y-3">
         {!activeSessionId && !sessionLoading && (
           <div className="rounded-xl bg-surface-container px-3 py-2 text-xs text-on-surface-variant">
             {activeSessionKind === 'pdf'
