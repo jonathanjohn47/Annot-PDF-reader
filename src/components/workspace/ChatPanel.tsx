@@ -186,9 +186,12 @@ export function ChatPanel() {
       const fullCanvas = await html2canvas(container, {
         backgroundColor: '#ffffff',
         useCORS: true,
-        // html2canvas clones the DOM to render it, which resets any scrolled
-        // element back to scrollTop/scrollLeft 0 — restore the live scroll
-        // position on the clone so it rasterizes what's actually on screen.
+        // html2canvas's default custom DOM-walking renderer has known bugs
+        // clipping a nested overflow:auto/scroll element correctly — it can
+        // paint content that lies past the scrolled viewport. Delegate the
+        // actual paint to the browser's native renderer instead, via SVG
+        // <foreignObject>, which respects scroll clipping correctly.
+        foreignObjectRendering: true,
         onclone: (_doc, clonedEl) => {
           clonedEl.scrollTop = scrollTop;
           clonedEl.scrollLeft = scrollLeft;
