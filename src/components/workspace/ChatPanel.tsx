@@ -233,6 +233,11 @@ export function ChatPanel() {
       setChatScreenshotError(err instanceof Error ? err.message : 'Failed to capture screenshot.');
     } finally {
       setChatScreenshotSaving(false);
+      // Deferred until the capture itself is done: turning this off earlier
+      // removes the "screenshot mode" banner and reflows the (flex-1)
+      // messages panel mid-capture, shifting it out from under the geometry
+      // already captured for the crop.
+      setChatScreenshotMode(false);
     }
   }, [activeSessionFolder, setScreenshot]);
 
@@ -262,9 +267,9 @@ export function ChatPanel() {
       setChatScreenshotDraft((current) => {
         if (current && current.width > 8 && current.height > 8) {
           void finalizeChatScreenshot(current);
-          setChatScreenshotMode(false);
         } else if (drag) {
           setChatScreenshotError('Draw a larger rectangle to capture a screenshot.');
+          setChatScreenshotMode(false);
         }
         return null;
       });
