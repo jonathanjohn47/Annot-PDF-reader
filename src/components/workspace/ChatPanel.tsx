@@ -118,7 +118,6 @@ export function ChatPanel() {
     setSelectedText,
     screenshot,
     setScreenshot,
-    screenshotMode,
     setScreenshotMode,
   } = useWorkspace();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -145,19 +144,18 @@ export function ChatPanel() {
   const [awaitingAskScreenshot, setAwaitingAskScreenshot] = useState(false);
 
   useEffect(() => {
-    if (awaitingAskScreenshot && !screenshotMode) {
+    if (awaitingAskScreenshot && screenshot) {
       setAwaitingAskScreenshot(false);
-      if (screenshot) {
-        setAskWholeMessage('');
-      }
+      setAskWholeMessage('');
     }
-  }, [awaitingAskScreenshot, screenshotMode, screenshot]);
+  }, [awaitingAskScreenshot, screenshot]);
 
   const handleCaptureScreenshotForAsk = useCallback(() => {
     if (!activePdf) return;
+    setScreenshot(null);
     setAwaitingAskScreenshot(true);
     setScreenshotMode(true);
-  }, [activePdf, setScreenshotMode]);
+  }, [activePdf, setScreenshot, setScreenshotMode]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const skipSessionHydrationRef = useRef<string | null>(null);
