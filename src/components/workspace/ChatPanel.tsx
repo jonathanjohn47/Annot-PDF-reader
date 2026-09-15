@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown, SquarePen, RefreshCw, Copy, Check } from 'lucide-react';
+import { Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown, SquarePen, RefreshCw, Copy, Check, MessageCircleQuestion } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -9,6 +9,7 @@ import rehypeKatex from 'rehype-katex';
 import { DEFAULT_AI_PROVIDER } from '@/lib/ai-providers/config';
 import { MarkdownPreviewDialog } from '@/components/common/MarkdownPreviewDialog';
 import { AskQuestionSelector } from '@/components/workspace/AskQuestionSelector';
+import { AskQuestionDialog } from '@/components/workspace/AskQuestionDialog';
 import { buildSessionSummaryMarkdown, getSessionSummaryMarkdownFileName } from '@/lib/session-summary-markdown';
 import { useWorkspace } from '@/lib/workspace-store';
 import { normalizeMathMarkdown } from '@/lib/markdown-math';
@@ -138,6 +139,7 @@ export function ChatPanel() {
   const [newChatLoading, setNewChatLoading] = useState(false);
   const [newChatError, setNewChatError] = useState('');
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [askWholeMessage, setAskWholeMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const skipSessionHydrationRef = useRef<string | null>(null);
@@ -993,6 +995,9 @@ export function ChatPanel() {
   const inputFontStyle = { fontSize: `${chatFontSize}px`, lineHeight: 1.7 };
   const codeFontSize = Math.max(11, chatFontSize - 2);
   const codeFontStyle = { fontSize: `${codeFontSize}px` };
+  const askQuestionCurrentPdfPath = activeSessionKind === 'pdf'
+    ? (activeSessionPdfPath || activePdf?.path || null)
+    : (activePdf?.path || null);
 
   return (
     <div className="h-full flex flex-col">
@@ -1221,17 +1226,26 @@ export function ChatPanel() {
                       {normalizeMathMarkdown(msg.content)}
                     </ReactMarkdown>
                   </div>
-                  <button
-                    onClick={() => void handleCopyMessage(msg)}
-                    className="mt-1 flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high"
-                  >
-                    {copiedMessageId === msg.id ? (
-                      <Check size={10} strokeWidth={2} />
-                    ) : (
-                      <Copy size={10} strokeWidth={2} />
-                    )}
-                    {copiedMessageId === msg.id ? 'Copied' : 'Copy'}
-                  </button>
+                  <div className="mt-1 flex items-center gap-1">
+                    <button
+                      onClick={() => void handleCopyMessage(msg)}
+                      className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                    >
+                      {copiedMessageId === msg.id ? (
+                        <Check size={10} strokeWidth={2} />
+                      ) : (
+                        <Copy size={10} strokeWidth={2} />
+                      )}
+                      {copiedMessageId === msg.id ? 'Copied' : 'Copy'}
+                    </button>
+                    <button
+                      onClick={() => setAskWholeMessage(msg.content)}
+                      className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                    >
+                      <MessageCircleQuestion size={10} strokeWidth={2} />
+                      Ask Question
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -1369,7 +1383,17 @@ export function ChatPanel() {
         folderPath={activeSessionFolder}
         sessionId={activeSessionId}
         model={selectedModel}
-        currentPdfPath={activeSessionKind === 'pdf' ? (activeSessionPdfPath || activePdf?.path || null) : (activePdf?.path || null)}
+        currentPdfPath={askQuestionCurrentPdfPath}
+      />
+
+      <AskQuestionDialog
+        open={askWholeMessage !== null}
+        selectedText={askWholeMessage ?? ''}
+        folderPath={activeSessionFolder}
+        sessionId={activeSessionId}
+        model={selectedModel}
+        currentPdfPath={askQuestionCurrentPdfPath}
+        onClose={() => setAskWholeMessage(null)}
       />
     </div>
   );
