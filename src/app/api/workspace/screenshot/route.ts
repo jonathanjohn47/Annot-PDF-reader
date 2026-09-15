@@ -13,22 +13,28 @@ const PNG_DATA_URL_PREFIX = 'data:image/png;base64,';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { pdfPath, imageDataUrl } = body as {
+    const { pdfPath, folderPath: explicitFolderPath, imageDataUrl } = body as {
       pdfPath?: string;
+      folderPath?: string;
       imageDataUrl?: string;
     };
 
-    if (!pdfPath?.trim()) {
-      return NextResponse.json({ error: 'pdfPath is required' }, { status: 400 });
+    if (!pdfPath?.trim() && !explicitFolderPath?.trim()) {
+      return NextResponse.json({ error: 'pdfPath or folderPath is required' }, { status: 400 });
     }
 
     if (!imageDataUrl?.startsWith(PNG_DATA_URL_PREFIX)) {
       return NextResponse.json({ error: 'imageDataUrl must be a PNG data URL' }, { status: 400 });
     }
 
-    const trimmedPdfPath = pdfPath.trim();
-    const lastSlash = trimmedPdfPath.lastIndexOf('/');
-    const folderPath = lastSlash === -1 ? '' : trimmedPdfPath.slice(0, lastSlash);
+    let folderPath: string;
+    if (explicitFolderPath?.trim()) {
+      folderPath = explicitFolderPath.trim();
+    } else {
+      const trimmedPdfPath = pdfPath!.trim();
+      const lastSlash = trimmedPdfPath.lastIndexOf('/');
+      folderPath = lastSlash === -1 ? '' : trimmedPdfPath.slice(0, lastSlash);
+    }
 
     const absoluteFolder = resolveFolderPath(folderPath);
     const screenshotsDir = path.join(absoluteFolder, '.annot', 'screenshots');

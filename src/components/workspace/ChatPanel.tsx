@@ -118,7 +118,6 @@ export function ChatPanel() {
     setSelectedText,
     screenshot,
     setScreenshot,
-    setScreenshotMode,
   } = useWorkspace();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -141,26 +140,133 @@ export function ChatPanel() {
   const [newChatError, setNewChatError] = useState('');
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [askWholeMessage, setAskWholeMessage] = useState<string | null>(null);
-  const [awaitingAskScreenshot, setAwaitingAskScreenshot] = useState(false);
-
-  useEffect(() => {
-    if (awaitingAskScreenshot && screenshot) {
-      setAwaitingAskScreenshot(false);
-      setAskWholeMessage('');
-    }
-  }, [awaitingAskScreenshot, screenshot]);
-
-  const handleCaptureScreenshotForAsk = useCallback(() => {
-    if (!activePdf) return;
-    setScreenshot(null);
-    setAwaitingAskScreenshot(true);
-    setScreenshotMode(true);
-  }, [activePdf, setScreenshot, setScreenshotMode]);
+  const [chatScreenshotMode, setChatScreenshotMode] = useState(false);
+  const [chatScreenshotDraft, setChatScreenshotDraft] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const [chatScreenshotSaving, setChatScreenshotSaving] = useState(false);
+  const [chatScreenshotError, setChatScreenshotError] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const chatScreenshotDragRef = useRef<{ startX: number; startY: number } | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const skipSessionHydrationRef = useRef<string | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
   const sessionUiMapRef = useRef<Record<string, SessionUiState>>({});
+
+  const finalizeChatScreenshot = useCallback(async (rect: { x: number; y: number; width: number; height: number }) => {
+    const container = messagesContainerRef.current;
+    if (!container || !activeSessionFolder) {
+      return;
+    }
+
+    setChatScreenshotSaving(true);
+    setChatScreenshotError('');
+
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const fullCanvas = await html2canvas(container, { backgroundColor: '#ffffff', useCORS: true });
+      const scaleX = fullCanvas.width / container.scrollWidth;
+      const scaleY = fullCanvas.height / container.scrollHeight;
+
+      const cropCanvas = document.createElement('canvas');
+      cropCanvas.width = Math.max(1, Math.round(rect.width * scaleX));
+      cropCanvas.height = Math.max(1, Math.round(rect.height * scaleY));
+      const ctx = cropCanvas.getContext('2d');
+      if (!ctx) throw new Error('Could not prepare screenshot canvas.');
+
+      ctx.drawImage(
+        fullCanvas,
+        rect.x * scaleX,
+        rect.y * scaleY,
+        rect.width * scaleX,
+        rect.height * scaleY,
+        0,
+        0,
+        cropCanvas.width,
+        cropCanvas.height,
+      );
+
+      const dataUrl = cropCanvas.toDataURL('image/png');
+      const res = await fetch('/api/workspace/screenshot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderPath: activeSessionFolder, imageDataUrl: dataUrl }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || data?.error) {
+        throw new Error(typeof data?.error === 'string' ? data.error : 'Failed to save screenshot.');
+      }
+
+      setScreenshot({ path: data.path as string, dataUrl });
+      setAskWholeMessage('');
+    } catch (err) {
+      setChatScreenshotError(err instanceof Error ? err.message : 'Failed to capture screenshot.');
+    } finally {
+      setChatScreenshotSaving(false);
+    }
+  }, [activeSessionFolder, setScreenshot]);
+
+  useEffect(() => {
+    if (!chatScreenshotMode) return;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const drag = chatScreenshotDragRef.current;
+      const container = messagesContainerRef.current;
+      if (!drag || !container) return;
+
+      const bounds = container.getBoundingClientRect();
+      const currentX = event.clientX - bounds.left + container.scrollLeft;
+      const currentY = event.clientY - bounds.top + container.scrollTop;
+
+      setChatScreenshotDraft({
+        x: Math.min(drag.startX, currentX),
+        y: Math.min(drag.startY, currentY),
+        width: Math.abs(currentX - drag.startX),
+        height: Math.abs(currentY - drag.startY),
+      });
+    };
+
+    const handleMouseUp = () => {
+      const drag = chatScreenshotDragRef.current;
+      chatScreenshotDragRef.current = null;
+      if (!drag) return;
+
+      setChatScreenshotDraft((current) => {
+        if (current && current.width > 8 && current.height > 8) {
+          void finalizeChatScreenshot(current);
+          setChatScreenshotMode(false);
+        } else if (drag) {
+          setChatScreenshotError('Draw a larger rectangle to capture a screenshot.');
+        }
+        return null;
+      });
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [chatScreenshotMode, finalizeChatScreenshot]);
+
+  const handleChatScreenshotMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!chatScreenshotMode || chatScreenshotSaving) return;
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    event.preventDefault();
+    const bounds = container.getBoundingClientRect();
+    const startX = event.clientX - bounds.left + container.scrollLeft;
+    const startY = event.clientY - bounds.top + container.scrollTop;
+    chatScreenshotDragRef.current = { startX, startY };
+    setChatScreenshotDraft({ x: startX, y: startY, width: 0, height: 0 });
+  };
 
   const sessionLabel = activeSessionKind === 'pdf' ? 'PDF Session' : 'Folder Session';
   const exportSession = useMemo<Session>(() => ({
@@ -1025,12 +1131,23 @@ export function ChatPanel() {
         </div>
         <div className="flex items-center gap-1">
           <button
-            onClick={handleCaptureScreenshotForAsk}
-            disabled={!activePdf}
-            className="flex items-center gap-1 rounded-md bg-surface-container px-2.5 py-1.5 text-[11px] font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-50"
-            title={activePdf ? 'Capture a screenshot to ask about' : 'Open a PDF to capture a screenshot'}
+            onClick={() => {
+              setChatScreenshotError('');
+              setChatScreenshotMode((current) => !current);
+            }}
+            disabled={chatScreenshotSaving}
+            className={`flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+              chatScreenshotMode
+                ? 'bg-primary text-on-primary'
+                : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
+            }`}
+            title={chatScreenshotMode ? 'Drag over the chat to capture a region' : 'Capture a screenshot from this chat'}
           >
-            <Camera size={11} strokeWidth={2} />
+            {chatScreenshotSaving ? (
+              <Loader2 size={11} className="animate-spin" />
+            ) : (
+              <Camera size={11} strokeWidth={2} />
+            )}
           </button>
           <button
             onClick={() => void handleNewChat()}
@@ -1107,8 +1224,38 @@ export function ChatPanel() {
         </div>
       )}
 
+      {chatScreenshotError && (
+        <div className="mx-4 mb-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-800">
+          {chatScreenshotError}
+        </div>
+      )}
+
+      {chatScreenshotMode && (
+        <div className="mx-4 mb-2 rounded-lg bg-surface-container px-3 py-2 text-xs text-on-surface-variant">
+          Screenshot mode is on — drag over the chat below to capture a region.
+        </div>
+      )}
+
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 space-y-3">
+      <div
+        ref={messagesContainerRef}
+        onMouseDown={handleChatScreenshotMouseDown}
+        className={`relative flex-1 overflow-y-auto px-4 space-y-3 ${
+          chatScreenshotMode ? 'cursor-crosshair select-none' : ''
+        }`}
+      >
+        {chatScreenshotDraft && (
+          <div
+            style={{
+              position: 'absolute',
+              left: chatScreenshotDraft.x,
+              top: chatScreenshotDraft.y,
+              width: chatScreenshotDraft.width,
+              height: chatScreenshotDraft.height,
+            }}
+            className="pointer-events-none z-10 border-2 border-primary bg-primary/10"
+          />
+        )}
         {!activeSessionId && !sessionLoading && (
           <div className="rounded-xl bg-surface-container px-3 py-2 text-xs text-on-surface-variant">
             {activeSessionKind === 'pdf'
