@@ -1,14 +1,16 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, NotebookPen, Plus, Save, Trash2, X } from 'lucide-react';
+import { Loader2, MessageCircleQuestion, NotebookPen, Plus, Save, Trash2, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
 import { normalizeMathMarkdown } from '@/lib/markdown-math';
+import { useWorkspace } from '@/lib/workspace-store';
 import { PdfNote } from '@/types';
+import { AskQuestionDialog } from '@/components/workspace/AskQuestionDialog';
 
 interface NotesDialogProps {
   open: boolean;
@@ -26,6 +28,7 @@ function formatTimestamp(value: string): string {
 }
 
 export function NotesDialog({ open, pdfPath, pdfName, onClose }: NotesDialogProps) {
+  const { activeSessionFolder, activeSessionId } = useWorkspace();
   const [notes, setNotes] = useState<PdfNote[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -34,6 +37,7 @@ export function NotesDialog({ open, pdfPath, pdfName, onClose }: NotesDialogProp
   const [draftContent, setDraftContent] = useState('');
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [askNote, setAskNote] = useState<PdfNote | null>(null);
 
   const selectedNote = useMemo(
     () => notes.find((note) => note.id === selectedNoteId) ?? null,
@@ -264,6 +268,13 @@ export function NotesDialog({ open, pdfPath, pdfName, onClose }: NotesDialogProp
                         </div>
                       </button>
                       <button
+                        onClick={() => setAskNote(note)}
+                        className="shrink-0 rounded p-1 text-on-surface-variant opacity-0 transition-opacity hover:bg-surface-container-high group-hover:opacity-100"
+                        title="Ask Question"
+                      >
+                        <MessageCircleQuestion size={12} strokeWidth={2} />
+                      </button>
+                      <button
                         onClick={() => void handleDelete(note)}
                         disabled={deletingId === note.id}
                         className="shrink-0 rounded p-1 text-on-surface-variant opacity-0 transition-opacity hover:bg-surface-container-high hover:text-error group-hover:opacity-100 disabled:opacity-50"
@@ -291,6 +302,15 @@ export function NotesDialog({ open, pdfPath, pdfName, onClose }: NotesDialogProp
                 placeholder="Note title"
                 className="flex-1 bg-transparent text-sm font-medium text-on-surface outline-none placeholder:text-outline"
               />
+              {selectedNote && (
+                <button
+                  onClick={() => setAskNote(selectedNote)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-surface-container px-3 py-1.5 text-xs font-semibold text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                >
+                  <MessageCircleQuestion size={12} strokeWidth={2} />
+                  Ask Question
+                </button>
+              )}
               <button
                 onClick={() => void handleSave()}
                 disabled={saving || !isDirty || (!draftTitle.trim() && !draftContent.trim())}
@@ -373,6 +393,15 @@ export function NotesDialog({ open, pdfPath, pdfName, onClose }: NotesDialogProp
           </div>
         </div>
       </div>
+
+      <AskQuestionDialog
+        open={askNote !== null}
+        selectedText={askNote ? `${askNote.title}\n\n${askNote.content}` : ''}
+        folderPath={activeSessionFolder}
+        sessionId={activeSessionId}
+        currentPdfPath={pdfPath}
+        onClose={() => setAskNote(null)}
+      />
     </div>
   );
 }
