@@ -180,8 +180,20 @@ export function ChatPanel() {
         throw new Error('Selected region is outside the chat panel.');
       }
 
+      const scrollTop = container.scrollTop;
+      const scrollLeft = container.scrollLeft;
       const html2canvas = (await import('html2canvas')).default;
-      const fullCanvas = await html2canvas(container, { backgroundColor: '#ffffff', useCORS: true });
+      const fullCanvas = await html2canvas(container, {
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        // html2canvas clones the DOM to render it, which resets any scrolled
+        // element back to scrollTop/scrollLeft 0 — restore the live scroll
+        // position on the clone so it rasterizes what's actually on screen.
+        onclone: (_doc, clonedEl) => {
+          clonedEl.scrollTop = scrollTop;
+          clonedEl.scrollLeft = scrollLeft;
+        },
+      });
       const scaleX = fullCanvas.width / container.clientWidth;
       const scaleY = fullCanvas.height / container.clientHeight;
 
