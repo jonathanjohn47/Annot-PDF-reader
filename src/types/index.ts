@@ -13,7 +13,7 @@ export interface TreeNode {
 // ── Sessions ────────────────────────────────────────────────────
 
 export type SessionKind = 'folder' | 'pdf';
-export type AIProvider = 'codex' | 'claude';
+export type AIProvider = 'codex' | 'claude' | 'ollama';
 
 export interface Session {
   id: string;

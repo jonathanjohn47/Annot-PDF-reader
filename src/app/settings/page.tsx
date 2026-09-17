@@ -56,9 +56,11 @@ export default function SettingsPage() {
     setValidationResult(null);
   }, [candidateProvider]);
 
-  const getProviderLabel = (provider: AIProvider) => (
-    provider === 'claude' ? 'Claude Code' : 'Codex'
-  );
+  const getProviderLabel = (provider: AIProvider) => {
+    if (provider === 'claude') return 'Claude Code';
+    if (provider === 'ollama') return 'Ollama (local Llama)';
+    return 'Codex';
+  };
 
   const checkProvider = async (provider: AIProvider) => {
     setIsRefreshing(true);
@@ -166,6 +168,7 @@ export default function SettingsPage() {
                 >
                   <option value="codex">Codex</option>
                   <option value="claude">Claude Code</option>
+                  <option value="ollama">Ollama (local Llama)</option>
                 </select>
               </div>
 
@@ -208,7 +211,9 @@ export default function SettingsPage() {
                   <p className="text-sm text-on-surface-variant">
                     {candidateProvider === 'claude'
                       ? 'Annot could not confirm a usable Claude Code login on this machine yet.'
-                      : 'Annot could not confirm a usable Codex login on this machine yet.'}
+                      : candidateProvider === 'ollama'
+                        ? 'Annot could not reach a local Ollama server yet. Make sure "ollama serve" is running and a model is pulled.'
+                        : 'Annot could not confirm a usable Codex login on this machine yet.'}
                   </p>
                   {providerStatus.error && (
                     <p className="text-xs text-rose-700">{providerStatus.error}</p>

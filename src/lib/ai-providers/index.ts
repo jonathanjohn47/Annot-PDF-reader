@@ -1,6 +1,13 @@
 import { getClaudeAuthStatus, probeClaudeConnection, runClaudeTurn } from '@/lib/claude-code';
 import { fetchCodexModels, getCodexAuthStatus, sendCodexChat } from '@/lib/codex-auth';
 import { runCodexTurn } from '@/lib/codex-exec';
+import {
+  DEFAULT_OLLAMA_MODEL,
+  getOllamaAuthStatus,
+  listOllamaModels,
+  probeOllamaConnection,
+  runOllamaTurn,
+} from '@/lib/ollama';
 import { AIProvider } from '@/types';
 import { DEFAULT_AI_PROVIDER } from './config';
 
@@ -111,9 +118,58 @@ const claudeRuntime: ProviderRuntime = {
   },
 };
 
+const ollamaRuntime: ProviderRuntime = {
+  id: 'ollama',
+  async listModels(): Promise<ProviderModel[]> {
+    const models = await listOllamaModels();
+    if (models.length === 0) {
+      throw new Error('No Ollama models installed. Run `ollama pull <model>` first.');
+    }
+    return models;
+  },
+  async getStatus() {
+    return {
+      provider: 'ollama',
+      ...(await getOllamaAuthStatus()),
+    };
+  },
+  async validateConnection() {
+    const models = await ollamaRuntime.listModels();
+    const model = models[0]?.id || DEFAULT_OLLAMA_MODEL;
+    const result = await probeOllamaConnection(model);
+
+    return {
+      provider: 'ollama',
+      ok: /^ok\b/i.test(result.response.trim()),
+      model: result.model,
+      response: result.response,
+      message: 'Ollama responded successfully.',
+    };
+  },
+  async runTurn(
+    input: ProviderTurnInput,
+    options?: { onEvent?: (event: ProviderTurnEvent) => void },
+  ): Promise<ProviderTurnResult> {
+    return await runOllamaTurn(
+      {
+        providerSessionId: input.providerSessionId,
+        model: input.model || DEFAULT_OLLAMA_MODEL,
+        folderPath: input.folderPath,
+        sessionKind: input.sessionKind,
+        prompt: input.prompt,
+        currentPdfPath: input.currentPdfPath,
+        selectedText: input.selectedText,
+        screenshotPath: input.screenshotPath,
+      },
+      options,
+    );
+  },
+};
+
 const providerRegistry: Record<AIProvider, ProviderRuntime> = {
   codex: codexRuntime,
   claude: claudeRuntime,
+  ollama: ollamaRuntime,
 };
 
 export function getProviderRuntime(provider: AIProvider = DEFAULT_AI_PROVIDER): ProviderRuntime {
