@@ -46,9 +46,12 @@ interface OllamaChatMessage {
 // in memory, keyed by a generated session id, and lost on server restart.
 const conversationHistory = new Map<string, OllamaChatMessage[]>();
 
-function buildPrompt(input: Omit<OllamaRunTurnInput, 'providerSessionId' | 'model'>): string {
+function buildPrompt(
+  input: Omit<OllamaRunTurnInput, 'providerSessionId' | 'model'>,
+  isFollowUp: boolean,
+): string {
   return buildAnnotPrompt(
-    input,
+    { ...input, isFollowUp },
     'Local Ollama models used here are text-only and cannot view images — tell the user you cannot see the screenshot and ask them to paste the relevant text instead.',
   );
 }
@@ -146,7 +149,7 @@ export async function runOllamaTurn(
   const providerSessionId = input.providerSessionId || crypto.randomUUID();
   const history = conversationHistory.get(providerSessionId) || [];
 
-  const userMessage: OllamaChatMessage = { role: 'user', content: buildPrompt(input) };
+  const userMessage: OllamaChatMessage = { role: 'user', content: buildPrompt(input, history.length > 0) };
   const messages = [...history, userMessage];
 
   const content = await chat(input.model, messages, options);

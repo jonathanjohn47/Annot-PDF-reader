@@ -8,6 +8,8 @@ export interface AnnotPromptInput {
   currentPdfPath?: string | null;
   selectedText?: string | null;
   screenshotPath?: string | null;
+  /** True when resuming an existing provider session, which already holds the PDF and the rules from turn one. */
+  isFollowUp?: boolean;
 }
 
 export function buildAnnotPrompt(input: AnnotPromptInput, screenshotInstruction: string): string {
@@ -18,7 +20,12 @@ export function buildAnnotPrompt(input: AnnotPromptInput, screenshotInstruction:
     currentPdfPath,
     selectedText,
     screenshotPath,
+    isFollowUp,
   } = input;
+
+  if (isFollowUp) {
+    return buildFollowUpPrompt(input, screenshotInstruction);
+  }
 
   const workspaceRoot = getWorkspaceRoot();
   const contextLines = [
@@ -73,4 +80,35 @@ export function buildAnnotPrompt(input: AnnotPromptInput, screenshotInstruction:
   ];
 
   return contextLines.join('\n');
+}
+
+// Resumed sessions already carry the context, PDF contents, and style rules
+// from the first turn, so only send what can change per message.
+function buildFollowUpPrompt(input: AnnotPromptInput, screenshotInstruction: string): string {
+  const { prompt, currentPdfPath, selectedText, screenshotPath } = input;
+
+  const lines = [
+    'Follow-up message in the same session. The session context, explanation style, math formatting, and note-saving rules from earlier in this conversation still apply.',
+    currentPdfPath ? `- Current PDF open in the viewer: ${currentPdfPath}` : '- No PDF is currently open in the viewer.',
+    '- Do not re-read the PDF if you already read it earlier in this conversation. Rely on what you already know. Read again only if it is a different PDF, or you need specific pages you have not read yet, and then read only those pages.',
+    ...(selectedText?.trim()
+      ? [
+          '- The user has selected the following text in the PDF viewer. Treat it as the primary focus of their request unless the request clearly says otherwise:',
+          '"""',
+          selectedText.trim(),
+          '"""',
+        ]
+      : []),
+    ...(screenshotPath?.trim()
+      ? [
+          `- The user captured a screenshot region from the PDF viewer at this path: ${screenshotPath.trim()}`,
+          `- ${screenshotInstruction}`,
+        ]
+      : []),
+    '',
+    'User request:',
+    prompt,
+  ];
+
+  return lines.join('\n');
 }
