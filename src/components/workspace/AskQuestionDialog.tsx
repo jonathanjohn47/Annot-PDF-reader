@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Camera, Check, Copy, Loader2, MessageCircleQuestion, Quote, Send, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { CodeBlockPre } from '@/components/common/CodeBlockPre';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
@@ -54,7 +55,7 @@ function AskMarkdown({ content, className }: { content: string; className?: stri
               </code>
             );
           },
-          pre: ({ children }) => <pre className="mb-3 last:mb-0">{children}</pre>,
+          pre: ({ children }) => <CodeBlockPre>{children}</CodeBlockPre>,
           blockquote: ({ children }) => (
             <blockquote className="mb-3 border-l-2 border-outline-variant pl-3 text-on-surface-variant last:mb-0">
               {children}

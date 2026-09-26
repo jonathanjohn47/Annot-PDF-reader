@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown, SquarePen, RefreshCw, Copy, Check, MessageCircleQuestion } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { CodeBlockPre } from '@/components/common/CodeBlockPre';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
@@ -1215,7 +1216,7 @@ export function ChatPanel() {
                             </code>
                           );
                         },
-                        pre: ({ children }) => <pre className="mb-3 last:mb-0">{children}</pre>,
+                        pre: ({ children }) => <CodeBlockPre>{children}</CodeBlockPre>,
                         blockquote: ({ children }) => (
                           <blockquote className="mb-3 border-l-2 border-outline-variant pl-3 text-on-surface-variant last:mb-0">
                             {children}
