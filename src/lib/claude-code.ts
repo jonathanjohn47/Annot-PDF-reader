@@ -128,6 +128,8 @@ async function resolveClaudeExecutable(): Promise<ResolvedCommand> {
   );
 }
 
+const DEFAULT_CLAUDE_EFFORT = 'high';
+
 function createClaudeArgs(input: ClaudeRunTurnInput): string[] {
   const args = [
     '--print',
@@ -150,6 +152,8 @@ function createClaudeArgs(input: ClaudeRunTurnInput): string[] {
   if (input.model) {
     args.push('--model', input.model);
   }
+
+  args.push('--effort', DEFAULT_CLAUDE_EFFORT);
 
   args.push(buildPrompt(input));
   return args;

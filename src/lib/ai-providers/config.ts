@@ -1,6 +1,6 @@
 import { AIProvider } from '@/types';
 
-export const DEFAULT_AI_PROVIDER: AIProvider = 'codex';
+export const DEFAULT_AI_PROVIDER: AIProvider = 'claude';
 
 export function parseAIProvider(value: string | null | undefined): AIProvider | undefined {
   if (value === 'codex' || value === 'claude' || value === 'ollama') {
