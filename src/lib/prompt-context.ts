@@ -78,6 +78,13 @@ export function buildAnnotPrompt(input: AnnotPromptInput, screenshotInstruction:
     '- Anything beyond B.Tech level (advanced matrix theory, measure theory, optimisation, information theory, and so on) must not be assumed. When such an idea is needed, introduce it from a B.Tech-level idea they already know, in a step or two, then use it.',
     '- Do not waste their time: no unrelated background, no side topics, no examples from outside the concept at hand. Stay on the concept they asked about, at their level.',
     '',
+    'No sudden jumps (every answer must be followable line by line):',
+    '- Never write a quantity, constant, function, or formula the student has not yet seen derived or defined in this answer or earlier in the conversation. Examples of what must not appear out of nowhere: ln 2, a log or exponential, a normalising constant, a specific number like 4 or 1/2, a named result. If a line contains something new, the line before it must have produced it.',
+    '- When the question is "why do we use X" or "how do we know X is right", X is the answer, so it must arrive as a conclusion, never as a premise. Build toward it in this order: (1) state what property we want, in plain words; (2) show the small step or count that forces that property; (3) only then write X, and show that it meets the property. If X is written before step 2, the answer has failed, however correct it is.',
+    '- When an answer moves from a counting or plain-words argument to a formula, bridge it explicitly in one or two lines: say which of the counted things becomes which symbol, and why that symbol (for example, "two outcomes, equally likely, so each has probability 1/2, so the surprise of one outcome is written ...").',
+    '- Brevity never justifies skipping a link. Short means fewer words per step, not fewer steps. If cutting a step would make the student ask "where did this come from?", keep the step.',
+    '- Before sending, re-read the answer once as the student would, line by line, and check: for every new symbol, number, or term, can they point to the line that produced it? If not, add the missing line or remove the term.',
+    '',
     'Find where the student is stuck (silent diagnosis — always do this before answering):',
     '- A student rarely says where exactly they are stuck. The question they type is only a symptom, usually asked from the wrong side. Your first job is not to answer the question; it is to work out which exact idea, step, or term is not clear to them. Answering the surface question while the real gap stays untouched is the main failure to avoid.',
     '- Read the clues silently: the exact words they used (and which term they got wrong or avoided), what they selected in the PDF, what they asked just before this, which earlier explanation they came back to, and whether this question is a rephrasing of an earlier one (that means the earlier answer missed the real gap — do not repeat it, change the angle). Also notice what they did NOT ask: a missing prerequisite is often the true stuck point.',
@@ -113,6 +120,7 @@ function buildFollowUpPrompt(input: AnnotPromptInput, screenshotInstruction: str
     'Follow-up message in the same session. The session context, explanation style, math formatting, and note-saving rules from earlier in this conversation still apply.',
     currentPdfPath ? `- Current PDF open in the viewer: ${currentPdfPath}` : '- No PDF is currently open in the viewer.',
     '- Silently re-diagnose where the student is stuck, using this new message together with the earlier ones. If it rephrases or circles an earlier question, the last answer missed the real gap: change the angle, do not repeat it, and do not add a new example unless the earlier one clearly failed. Never mention this diagnosis.',
+    '- Do not introduce any symbol, number, or formula without the line that produces it. If the question asks "why X", build up to X and write X last, as the conclusion.',
     '- Do not re-read the PDF if you already read it earlier in this conversation. Rely on what you already know. Read again only if it is a different PDF, or you need specific pages you have not read yet, and then read only those pages.',
     ...(selectedText?.trim()
       ? [
