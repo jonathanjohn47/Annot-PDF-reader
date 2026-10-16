@@ -128,7 +128,7 @@ async function resolveClaudeExecutable(): Promise<ResolvedCommand> {
   );
 }
 
-const DEFAULT_CLAUDE_EFFORT = 'high';
+const DEFAULT_CLAUDE_EFFORT = 'medium';
 
 function createClaudeArgs(input: ClaudeRunTurnInput): string[] {
   const args = [
