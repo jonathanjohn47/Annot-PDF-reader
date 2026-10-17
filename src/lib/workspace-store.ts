@@ -3,6 +3,11 @@
 import { createContext, useContext } from 'react';
 import { Session, SessionKind, TreeNode } from '@/types';
 
+export interface ScreenshotAttachment {
+  path: string;
+  dataUrl: string;
+}
+
 export interface WorkspaceState {
   // Current workspace tree rooted at the user's home Annot folder
   treeRoot: TreeNode | null;
@@ -26,8 +31,8 @@ export interface WorkspaceState {
   chatOpen: boolean;
   // Text currently selected by the user in the PDF viewer (outside highlight/erase mode)
   selectedText: string | null;
-  // Screenshot region captured from the PDF viewer, pending attachment to a chat query
-  screenshot: { path: string; dataUrl: string } | null;
+  // Screenshot regions captured from the PDF viewer, pending attachment to a chat query (in capture order)
+  screenshots: ScreenshotAttachment[];
   // Whether the PDF viewer is in screenshot-capture (drag-to-select) mode
   screenshotMode: boolean;
 }
@@ -42,7 +47,9 @@ export interface WorkspaceActions {
   toggleChat: () => void;
   refreshTree: () => Promise<TreeNode | null>;
   setSelectedText: (text: string | null) => void;
-  setScreenshot: (screenshot: { path: string; dataUrl: string } | null) => void;
+  addScreenshot: (screenshot: ScreenshotAttachment) => void;
+  removeScreenshot: (path: string) => void;
+  clearScreenshots: () => void;
   setScreenshotMode: (active: boolean) => void;
 }
 

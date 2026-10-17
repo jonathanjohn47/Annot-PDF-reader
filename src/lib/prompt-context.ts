@@ -7,9 +7,33 @@ export interface AnnotPromptInput {
   prompt: string;
   currentPdfPath?: string | null;
   selectedText?: string | null;
-  screenshotPath?: string | null;
+  screenshotPaths?: string[];
   /** True when resuming an existing provider session, which already holds the PDF and the rules from turn one. */
   isFollowUp?: boolean;
+}
+
+function describeScreenshots(
+  screenshotPaths: string[] | undefined,
+  screenshotInstruction: string,
+  withKindHint: boolean,
+): string[] {
+  const paths = (screenshotPaths ?? []).map((item) => item.trim()).filter(Boolean);
+  if (paths.length === 0) return [];
+
+  const kindHint = withKindHint ? ' (likely a math equation, diagram, or figure)' : '';
+  if (paths.length === 1) {
+    return [
+      `- The user captured a screenshot region from the PDF viewer${kindHint} at this path: ${paths[0]}`,
+      `- ${screenshotInstruction}`,
+    ];
+  }
+
+  return [
+    `- The user captured ${paths.length} screenshot regions from the PDF viewer${kindHint}, in the order they were captured:`,
+    ...paths.map((item, index) => `  Screenshot ${index + 1}: ${item}`),
+    '- The regions usually come from different parts of the document, and the question is about how they relate. Refer to them as "Screenshot 1", "Screenshot 2", and so on, and use each one in the answer; do not answer from only one.',
+    `- ${screenshotInstruction}`,
+  ];
 }
 
 export function buildAnnotPrompt(input: AnnotPromptInput, screenshotInstruction: string): string {
@@ -19,7 +43,7 @@ export function buildAnnotPrompt(input: AnnotPromptInput, screenshotInstruction:
     prompt,
     currentPdfPath,
     selectedText,
-    screenshotPath,
+    screenshotPaths,
     isFollowUp,
   } = input;
 
@@ -42,12 +66,7 @@ export function buildAnnotPrompt(input: AnnotPromptInput, screenshotInstruction:
           '"""',
         ]
       : []),
-    ...(screenshotPath?.trim()
-      ? [
-          `- The user captured a screenshot region from the PDF viewer (likely a math equation, diagram, or figure) at this path: ${screenshotPath.trim()}`,
-          `- ${screenshotInstruction}`,
-        ]
-      : []),
+    ...describeScreenshots(screenshotPaths, screenshotInstruction, true),
     sessionKind === 'pdf'
       ? '- Treat the current PDF as the primary document for this conversation. Only branch out when it materially helps.'
       : '- Prefer the current folder first, but you may inspect other files in the workspace if needed.',
@@ -87,6 +106,8 @@ export function buildAnnotPrompt(input: AnnotPromptInput, screenshotInstruction:
     '- Separate three kinds of statements and label them honestly: (a) a derivation, where the result is forced by earlier steps; (b) a definition or design choice, where people decided to define it that way for a stated reason; (c) a fact that comes from the PDF. Never present a definition or a choice as if it had been proved, and never present a design requirement as a measured fact. If the honest answer to "why this formula?" is "we chose it because it has property P, and here is why P is wanted", say exactly that.',
     '- Check the argument answers the question that was asked, not a neighbouring one. Re-read the student\'s question and your last line side by side: does the last line settle what they asked?',
     '- For any claim about numbers, counts, or how a quantity combines (adds, multiplies, averages), plug in a small concrete case and compute it before you assert the claim. Do not state "this adds" or "this multiplies" from memory or intuition.',
+    '- "Why is formula B written differently from formula A?" is a question about the written form, so the answer must explain the form. Do not answer it with "the two are really the same underneath" or "the difference is only apparent": that dismisses the question and leaves the student exactly where they were. Instead: (1) say what the student is comparing, in their own terms (for example "H(X) is written with surprise S(x), but H(X|Y) is written with H(X|Y=y), an entropy"); (2) write the full basic definition of B using the same ingredient as A, with every term (for example H(X|Y) = sum over x,y of p(x,y) S(x|y)); (3) show, line by line, the one regrouping or rule that turns that definition into the form they see, and say in one plain line what each part of the regrouped form means (for example: for one fixed y, the inner sum over x is a complete entropy of X; the outer sum averages those entropies over y); (4) state why that grouping is used (what it makes visible or easy). The answer is complete only when the student can see why the written form has the shape it has, not merely that it is equal.',
+    '- Never attribute your own earlier answer to the student ("you wrote earlier..."). Say "earlier we had...".',
     '- Before sending, read the whole answer once as a sceptical examiner: find any sentence that is false, any step that does not follow, any place two statements contradict each other or the PDF. Fix or delete it. If a step cannot be justified, do not include it.',
     '- If you are not sure something is true, say plainly which part you are sure of and which you are not, and keep the uncertain part out of the main argument. Never fill a gap with confident-sounding reasoning.',
     '',
@@ -146,13 +167,14 @@ export function buildAnnotPrompt(input: AnnotPromptInput, screenshotInstruction:
 // Resumed sessions already carry the context, PDF contents, and style rules
 // from the first turn, so only send what can change per message.
 function buildFollowUpPrompt(input: AnnotPromptInput, screenshotInstruction: string): string {
-  const { prompt, currentPdfPath, selectedText, screenshotPath } = input;
+  const { prompt, currentPdfPath, selectedText, screenshotPaths } = input;
 
   const lines = [
     'Follow-up message in the same session. The session context, explanation style, math formatting, and note-saving rules from earlier in this conversation still apply.',
     currentPdfPath ? `- Current PDF open in the viewer: ${currentPdfPath}` : '- No PDF is currently open in the viewer.',
     '- Silently re-diagnose where the student is stuck, using this new message together with the earlier ones. If it rephrases or circles an earlier question, the last answer missed the real gap: change the angle, do not repeat it, and do not add a new example unless the earlier one clearly failed. Never mention this diagnosis.',
     '- Correctness first: every step must be valid, not just plausible. Label a derivation, a definition/design choice, and a PDF fact honestly, and never present a choice as a proof. Check numeric claims with a small concrete case before asserting them, and answer the question actually asked.',
+    '- If asked "why is formula B written differently from formula A", explain the written form: name what is being compared, write B\'s basic definition with the same ingredient as A (all terms), show the one regrouping that gives the written form, say what each grouped part means, and why that grouping is used. Never reply "they are the same underneath" in place of this. Never say the student wrote something that you wrote earlier.',
     '- Answer by the shortest correct route from a standard fact the student already knows; no scaffolds or detours. Never apologise or comment on your earlier answers: if one was wrong, state the correct fact in one plain line and explain.',
     '- Before giving any example, work it through and confirm it really shows the property you claim. Discard a failing example before writing; never present one and retract it later.',
     '- Write every calculation as one \\begin{aligned} ... \\end{aligned} block inside \\[ ... \\], with "&=" aligned and "\\\\" after each row: formula in symbols, then values substituted, then one operation per row, final answer last. Never put steps or equations side by side on one line, and leave a blank line between separate blocks.',
@@ -169,12 +191,7 @@ function buildFollowUpPrompt(input: AnnotPromptInput, screenshotInstruction: str
           '"""',
         ]
       : []),
-    ...(screenshotPath?.trim()
-      ? [
-          `- The user captured a screenshot region from the PDF viewer at this path: ${screenshotPath.trim()}`,
-          `- ${screenshotInstruction}`,
-        ]
-      : []),
+    ...describeScreenshots(screenshotPaths, screenshotInstruction, false),
     '',
     'User request:',
     prompt,

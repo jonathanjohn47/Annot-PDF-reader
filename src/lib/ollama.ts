@@ -33,7 +33,7 @@ interface OllamaRunTurnInput {
   prompt: string;
   currentPdfPath?: string | null;
   selectedText?: string | null;
-  screenshotPath?: string | null;
+  screenshotPaths?: string[];
 }
 
 interface OllamaChatMessage {
@@ -52,7 +52,7 @@ function buildPrompt(
 ): string {
   return buildAnnotPrompt(
     { ...input, isFollowUp },
-    'Local Ollama models used here are text-only and cannot view images — tell the user you cannot see the screenshot and ask them to paste the relevant text instead.',
+    'Local Ollama models used here are text-only and cannot view images — tell the user you cannot see the screenshots and ask them to paste the relevant text instead.',
   );
 }
 

@@ -45,7 +45,7 @@ interface ClaudeRunTurnInput {
   prompt: string;
   currentPdfPath?: string | null;
   selectedText?: string | null;
-  screenshotPath?: string | null;
+  screenshotPaths?: string[];
 }
 
 interface ClaudeStreamEvent {
@@ -92,7 +92,7 @@ let resolvedClaudeExecutablePromise: Promise<ResolvedCommand> | null = null;
 function buildPrompt(input: Omit<ClaudeRunTurnInput, 'model'>): string {
   return buildAnnotPrompt(
     { ...input, isFollowUp: Boolean(input.providerSessionId) },
-    'Use the Read tool to view this image before answering, and treat it as the primary focus of their request unless the request clearly says otherwise.',
+    'Use the Read tool to view every image listed above before answering, and treat them as the primary focus of their request unless the request clearly says otherwise.',
   );
 }
 

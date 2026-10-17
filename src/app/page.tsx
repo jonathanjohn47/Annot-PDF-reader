@@ -3,7 +3,8 @@
 import dynamic from 'next/dynamic';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Session, TreeNode } from '@/types';
-import { WorkspaceContext, WorkspaceState } from '@/lib/workspace-store';
+import { ScreenshotAttachment, WorkspaceContext, WorkspaceState } from '@/lib/workspace-store';
+import { MAX_SCREENSHOTS } from '@/lib/screenshot-limits';
 import { TreeExplorer } from '@/components/tree/TreeExplorer';
 import { FolderView } from '@/components/workspace/FolderView';
 import { ChatPanel } from '@/components/workspace/ChatPanel';
@@ -34,7 +35,7 @@ export default function AppPage() {
     explorerOpen: true,
     chatOpen: false,
     selectedText: null,
-    screenshot: null,
+    screenshots: [],
     screenshotMode: false,
   });
   const [chatPanelWidth, setChatPanelWidth] = useState(DEFAULT_CHAT_PANEL_WIDTH);
@@ -58,7 +59,7 @@ export default function AppPage() {
       activeSessionId: keepCurrentSession ? currentState.activeSessionId : null,
       chatOpen: keepCurrentSession ? currentState.chatOpen : false,
       selectedText: keepCurrentSession ? currentState.selectedText : null,
-      screenshot: keepCurrentSession ? currentState.screenshot : null,
+      screenshots: keepCurrentSession ? currentState.screenshots : [],
       screenshotMode: keepCurrentSession ? currentState.screenshotMode : false,
     };
   }, []);
@@ -91,7 +92,7 @@ export default function AppPage() {
       activeSessionId: null,
       chatOpen: false,
       selectedText: null,
-      screenshot: null,
+      screenshots: [],
       screenshotMode: false,
     }));
   }, []);
@@ -112,7 +113,7 @@ export default function AppPage() {
   }, []);
 
   const closePdf = useCallback(() => {
-    setState((s) => ({ ...s, activePdf: null, selectedText: null, screenshot: null, screenshotMode: false }));
+    setState((s) => ({ ...s, activePdf: null, selectedText: null, screenshots: [], screenshotMode: false }));
   }, []);
 
   const toggleExplorer = useCallback(() => {
@@ -127,8 +128,20 @@ export default function AppPage() {
     setState((s) => ({ ...s, selectedText: text }));
   }, []);
 
-  const setScreenshot = useCallback((screenshot: { path: string; dataUrl: string } | null) => {
-    setState((s) => ({ ...s, screenshot }));
+  const addScreenshot = useCallback((screenshot: ScreenshotAttachment) => {
+    setState((s) => (
+      s.screenshots.length >= MAX_SCREENSHOTS
+        ? s
+        : { ...s, screenshots: [...s.screenshots, screenshot] }
+    ));
+  }, []);
+
+  const removeScreenshot = useCallback((path: string) => {
+    setState((s) => ({ ...s, screenshots: s.screenshots.filter((item) => item.path !== path) }));
+  }, []);
+
+  const clearScreenshots = useCallback(() => {
+    setState((s) => (s.screenshots.length === 0 ? s : { ...s, screenshots: [] }));
   }, []);
 
   const setScreenshotMode = useCallback((active: boolean) => {
@@ -287,7 +300,9 @@ export default function AppPage() {
     toggleExplorer,
     toggleChat,
     setSelectedText,
-    setScreenshot,
+    addScreenshot,
+    removeScreenshot,
+    clearScreenshots,
     setScreenshotMode,
   };
   const contextValue = { ...ctx, refreshTree };

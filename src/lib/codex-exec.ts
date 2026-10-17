@@ -38,7 +38,7 @@ interface RunTurnInput {
   prompt: string;
   currentPdfPath?: string | null;
   selectedText?: string | null;
-  screenshotPath?: string | null;
+  screenshotPaths?: string[];
 }
 
 interface ParsedEvent {
@@ -66,7 +66,7 @@ let resolvedCodexExecutablePromise: Promise<ResolvedCommand> | null = null;
 function buildPrompt(input: Omit<RunTurnInput, 'model'>): string {
   return buildAnnotPrompt(
     { ...input, isFollowUp: Boolean(input.codexSessionId) },
-    'View this image before answering, and treat it as the primary focus of their request unless the request clearly says otherwise.',
+    'View every image listed above before answering, and treat them as the primary focus of their request unless the request clearly says otherwise.',
   );
 }
 

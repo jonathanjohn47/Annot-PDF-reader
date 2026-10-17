@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/annot-sessions';
 import { getProviderRuntime } from '@/lib/ai-providers';
 import { createPdfNote } from '@/lib/pdf-notes';
+import { MAX_SCREENSHOTS } from '@/lib/screenshot-limits';
 import { appendNoteSavedConfirmation, extractNoteDirective } from '@/lib/note-directive';
 
 export async function POST(req: NextRequest) {
@@ -15,7 +16,7 @@ export async function POST(req: NextRequest) {
       selectedText,
       model,
       currentPdfPath,
-      screenshotPath,
+      screenshotPaths,
     } = body as {
       folderPath?: string;
       sessionId?: string;
@@ -23,13 +24,16 @@ export async function POST(req: NextRequest) {
       selectedText?: string;
       model?: string;
       currentPdfPath?: string | null;
-      screenshotPath?: string | null;
+      screenshotPaths?: string[] | null;
     };
 
     const trimmedSelectedText = selectedText?.trim() || '';
-    if (!folderPath || !sessionId || !question?.trim() || (!trimmedSelectedText && !screenshotPath)) {
+    const validScreenshotPaths = Array.isArray(screenshotPaths)
+      ? screenshotPaths.filter((item) => typeof item === 'string' && item.trim()).slice(0, MAX_SCREENSHOTS)
+      : [];
+    if (!folderPath || !sessionId || !question?.trim() || (!trimmedSelectedText && validScreenshotPaths.length === 0)) {
       return NextResponse.json(
-        { error: 'folderPath, sessionId, question, and either selectedText or screenshotPath are required' },
+        { error: 'folderPath, sessionId, question, and either selectedText or screenshotPaths are required' },
         { status: 400 },
       );
     }
@@ -55,7 +59,9 @@ export async function POST(req: NextRequest) {
     const resolvedPdfPath = currentPdfPath ?? session.pdfPath ?? null;
     const focusDescription = trimmedSelectedText
       ? 'a passage from your previous reply'
-      : 'a screenshot region the user just captured';
+      : validScreenshotPaths.length > 1
+        ? 'screenshot regions the user just captured'
+        : 'a screenshot region the user just captured';
     const turn = await runtime.runTurn({
       providerSessionId: session.providerSessionId,
       model: resolvedModel,
@@ -64,7 +70,7 @@ export async function POST(req: NextRequest) {
       sessionKind: session.sessionKind,
       currentPdfPath: resolvedPdfPath,
       selectedText: trimmedSelectedText || null,
-      screenshotPath: screenshotPath ?? null,
+      screenshotPaths: validScreenshotPaths,
     });
 
     const { cleanedContent, note } = extractNoteDirective(turn.content);

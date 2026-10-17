@@ -117,8 +117,9 @@ export function ChatPanel() {
     toggleChat,
     selectedText,
     setSelectedText,
-    screenshot,
-    setScreenshot,
+    screenshots,
+    removeScreenshot,
+    clearScreenshots,
   } = useWorkspace();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -575,7 +576,7 @@ export function ChatPanel() {
       skipSessionHydrationRef.current = newSessionId;
       setSelectedProvider((data.provider as AIProvider) || providerForNewChat);
       setSelectedText(null);
-      setScreenshot(null);
+      clearScreenshots();
       commitSessionUiState(newSessionId, (current) => ({
         ...current,
         provider: (data.provider as AIProvider) || providerForNewChat,
@@ -794,12 +795,12 @@ export function ChatPanel() {
               ? (activeSessionPdfPath || activePdf?.path || null)
             : (activePdf?.path || null),
             selectedText: selectedText || null,
-            screenshotPath: screenshot?.path || null,
+            screenshotPaths: screenshots.map((item) => item.path),
         }),
       });
 
       setSelectedText(null);
-      setScreenshot(null);
+      clearScreenshots();
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -1325,24 +1326,41 @@ export function ChatPanel() {
             </button>
           </div>
         )}
-        {screenshot && (
-          <div className="flex items-start gap-2 mb-2 px-3 py-2 rounded-lg bg-surface-container-low border border-outline-variant/20">
-            <img
-              src={screenshot.dataUrl}
-              alt="Captured screenshot"
-              className="w-12 h-12 rounded object-cover border border-outline-variant/30 shrink-0"
-            />
-            <div className="flex-1 min-w-0 self-center">
-              <div className="text-[10px] font-medium text-on-surface-variant">Screenshot attached</div>
-              <div className="text-xs text-on-surface-variant">Diagram or equation ready to send</div>
+        {screenshots.length > 0 && (
+          <div className="mb-2 px-3 py-2 rounded-lg bg-surface-container-low border border-outline-variant/20">
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="text-[10px] font-medium text-on-surface-variant">
+                {screenshots.length === 1 ? 'Screenshot attached' : `${screenshots.length} screenshots attached`}
+              </div>
+              <button
+                onClick={clearScreenshots}
+                className="shrink-0 text-[10px] text-on-surface-variant hover:text-on-surface transition-colors"
+                aria-label="Clear all screenshots"
+              >
+                Clear all
+              </button>
             </div>
-            <button
-              onClick={() => setScreenshot(null)}
-              className="shrink-0 text-on-surface-variant hover:text-on-surface transition-colors"
-              aria-label="Clear screenshot"
-            >
-              <X size={12} strokeWidth={2} />
-            </button>
+            <div className="flex flex-wrap gap-2">
+              {screenshots.map((item, index) => (
+                <div key={item.path} className="relative">
+                  <img
+                    src={item.dataUrl}
+                    alt={`Captured screenshot ${index + 1}`}
+                    className="w-12 h-12 rounded object-cover border border-outline-variant/30"
+                  />
+                  <span className="absolute left-0.5 top-0.5 rounded bg-black/60 px-1 text-[9px] leading-tight text-white">
+                    {index + 1}
+                  </span>
+                  <button
+                    onClick={() => removeScreenshot(item.path)}
+                    className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-on-surface text-surface-container-lowest"
+                    aria-label={`Remove screenshot ${index + 1}`}
+                  >
+                    <X size={9} strokeWidth={2.5} />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
         <div className="flex items-end gap-2 bg-surface-container-low rounded-xl px-3 py-2.5">

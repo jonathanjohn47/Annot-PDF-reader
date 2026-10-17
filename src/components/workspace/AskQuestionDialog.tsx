@@ -10,6 +10,7 @@ import rehypeKatex from 'rehype-katex';
 
 import { normalizeMathMarkdown } from '@/lib/markdown-math';
 import { useWorkspace } from '@/lib/workspace-store';
+import { MAX_SCREENSHOTS } from '@/lib/screenshot-limits';
 
 interface AskQuestionTurn {
   question: string;
@@ -78,7 +79,7 @@ export function AskQuestionDialog({
   currentPdfPath,
   onClose,
 }: AskQuestionDialogProps) {
-  const { activePdf, screenshot, setScreenshot, screenshotMode, setScreenshotMode } = useWorkspace();
+  const { activePdf, screenshots, removeScreenshot, clearScreenshots, screenshotMode, setScreenshotMode } = useWorkspace();
   const [question, setQuestion] = useState('');
   const [turns, setTurns] = useState<AskQuestionTurn[]>([]);
   const [loading, setLoading] = useState(false);
@@ -201,7 +202,7 @@ export function AskQuestionDialog({
     if (!trimmedQuestion || loading || !folderPath || !sessionId) return;
 
     const activeQuote = quotedText;
-    const activeScreenshot = screenshot;
+    const activeScreenshots = screenshots;
     const promptQuestion = activeQuote
       ? `Regarding this highlighted part: "${activeQuote}"\n\n${trimmedQuestion}`
       : trimmedQuestion;
@@ -222,7 +223,7 @@ export function AskQuestionDialog({
           selectedText,
           model,
           currentPdfPath,
-          screenshotPath: activeScreenshot?.path || null,
+          screenshotPaths: activeScreenshots.map((item) => item.path),
         }),
       });
       const data = await res.json();
@@ -235,8 +236,8 @@ export function AskQuestionDialog({
         ...current,
         { question: trimmedQuestion, answer: data.answer as string, quotedText: activeQuote ?? undefined },
       ]);
-      if (activeScreenshot) {
-        setScreenshot(null);
+      if (activeScreenshots.length > 0) {
+        clearScreenshots();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to get an answer.');
@@ -291,14 +292,17 @@ export function AskQuestionDialog({
             </div>
           )}
 
-          {screenshot && (
-            <div className={`rounded-xl bg-surface-container px-4 py-3 ${hasPassage ? 'mt-3' : ''}`}>
+          {screenshots.map((item, index) => (
+            <div
+              key={item.path}
+              className={`rounded-xl bg-surface-container px-4 py-3 ${hasPassage || index > 0 ? 'mt-3' : ''}`}
+            >
               <div className="flex items-center justify-between">
                 <div className="text-[10px] font-medium uppercase tracking-widest text-on-surface-variant">
-                  Screenshot
+                  {screenshots.length === 1 ? 'Screenshot' : `Screenshot ${index + 1}`}
                 </div>
                 <button
-                  onClick={() => setScreenshot(null)}
+                  onClick={() => removeScreenshot(item.path)}
                   className="rounded p-0.5 text-on-surface-variant hover:bg-surface-container-high"
                   title="Remove screenshot"
                 >
@@ -306,12 +310,12 @@ export function AskQuestionDialog({
                 </button>
               </div>
               <img
-                src={screenshot.dataUrl}
-                alt="Captured screenshot"
+                src={item.dataUrl}
+                alt={`Captured screenshot ${index + 1}`}
                 className="mt-2 max-h-64 w-full rounded-lg object-contain"
               />
             </div>
-          )}
+          ))}
 
           {error && (
             <div className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-800">
@@ -360,7 +364,7 @@ export function AskQuestionDialog({
               <p className="text-xs text-on-surface-variant">
                 {hasPassage
                   ? 'Ask anything about the passage above — the full PDF and chat history are used as context. Select any text here to quote it, or attach a screenshot from the PDF.'
-                  : 'Ask anything about the screenshot above, or attach one from the PDF — the full PDF and chat history are used as context.'}
+                  : 'Ask anything about the screenshots above, or attach more from the PDF — the full PDF and chat history are used as context.'}
               </p>
             )}
           </div>
@@ -387,8 +391,8 @@ export function AskQuestionDialog({
         <div className="flex items-end gap-2 border-t border-outline-variant/15 px-5 py-3">
           <button
             onClick={handleCaptureScreenshot}
-            disabled={!activePdf || loading}
-            title={activePdf ? 'Attach a screenshot region from the PDF' : 'Open a PDF to attach a screenshot'}
+            disabled={!activePdf || loading || screenshots.length >= MAX_SCREENSHOTS}
+            title={activePdf ? 'Attach a screenshot region from the PDF (you can attach several)' : 'Open a PDF to attach a screenshot'}
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:opacity-40"
           >
             <Camera size={14} strokeWidth={2} />

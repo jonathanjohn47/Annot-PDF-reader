@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { appendMessage, getSession, updateSession } from '@/lib/annot-sessions';
 import { getProviderRuntime } from '@/lib/ai-providers';
 import { createPdfNote } from '@/lib/pdf-notes';
+import { MAX_SCREENSHOTS } from '@/lib/screenshot-limits';
 import { appendNoteSavedConfirmation, extractNoteDirective } from '@/lib/note-directive';
 
 export async function POST(req: NextRequest) {
@@ -14,7 +15,7 @@ export async function POST(req: NextRequest) {
       model,
       currentPdfPath,
       selectedText,
-      screenshotPath,
+      screenshotPaths,
     } = body as {
       folderPath?: string;
       sessionId?: string;
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
       model?: string;
       currentPdfPath?: string | null;
       selectedText?: string | null;
-      screenshotPath?: string | null;
+      screenshotPaths?: string[] | null;
     };
 
     if (!folderPath || !sessionId || !prompt?.trim()) {
@@ -75,7 +76,9 @@ export async function POST(req: NextRequest) {
               sessionKind: session.sessionKind,
               currentPdfPath: resolvedPdfPath,
               selectedText: selectedText ?? null,
-              screenshotPath: screenshotPath ?? null,
+              screenshotPaths: Array.isArray(screenshotPaths)
+                ? screenshotPaths.filter((item) => typeof item === 'string' && item.trim()).slice(0, MAX_SCREENSHOTS)
+                : [],
             }, {
               onEvent: (event) => {
                 writeEvent(event);

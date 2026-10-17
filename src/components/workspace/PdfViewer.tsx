@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWorkspace } from '@/lib/workspace-store';
+import { MAX_SCREENSHOTS } from '@/lib/screenshot-limits';
 import { Highlight } from '@/types';
 import { getHighlightRects, mergeHighlights, normalizeHighlightRects, type HighlightRect } from '@/lib/highlight-utils';
 import { MarkdownPreviewDialog } from '@/components/common/MarkdownPreviewDialog';
@@ -74,7 +75,8 @@ export function PdfViewer() {
     chatOpen,
     toggleChat,
     setSelectedText,
-    setScreenshot,
+    screenshots,
+    addScreenshot,
     screenshotMode,
     setScreenshotMode,
   } = useWorkspace();
@@ -468,9 +470,9 @@ export function PdfViewer() {
         throw new Error(typeof data?.error === 'string' ? data.error : 'Failed to save screenshot.');
       }
 
-      setScreenshot({ path: data.path as string, dataUrl });
+      addScreenshot({ path: data.path as string, dataUrl });
       if (!chatOpen) toggleChat();
-      setSelectionNotice('Screenshot captured and attached to chat.');
+      setSelectionNotice(`Screenshot ${screenshots.length + 1} of up to ${MAX_SCREENSHOTS} attached to chat.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to save screenshot.';
       setSelectionNotice(message);
@@ -955,6 +957,10 @@ export function PdfViewer() {
             onClick={() => {
               setHighlightMode(null);
               setEraseMode(false);
+              if (!screenshotMode && screenshots.length >= MAX_SCREENSHOTS) {
+                setSelectionNotice(`You can attach at most ${MAX_SCREENSHOTS} screenshots. Remove one in the chat first.`);
+                return;
+              }
               setScreenshotMode(!screenshotMode);
             }}
             className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${
@@ -962,7 +968,7 @@ export function PdfViewer() {
                 ? 'bg-on-surface text-surface-container-lowest'
                 : 'text-on-surface-variant hover:bg-surface-container-high'
             }`}
-            title="Capture a screenshot region for the chat"
+            title="Capture a screenshot region for the chat (you can attach several)"
           >
             <Camera size={12} strokeWidth={2} />
           </button>

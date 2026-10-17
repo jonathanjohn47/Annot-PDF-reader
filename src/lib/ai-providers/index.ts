@@ -63,7 +63,7 @@ const codexRuntime: ProviderRuntime = {
         prompt: input.prompt,
         currentPdfPath: input.currentPdfPath,
         selectedText: input.selectedText,
-        screenshotPath: input.screenshotPath,
+        screenshotPaths: input.screenshotPaths,
       },
       options,
     );
@@ -159,7 +159,7 @@ const ollamaRuntime: ProviderRuntime = {
         prompt: input.prompt,
         currentPdfPath: input.currentPdfPath,
         selectedText: input.selectedText,
-        screenshotPath: input.screenshotPath,
+        screenshotPaths: input.screenshotPaths,
       },
       options,
     );

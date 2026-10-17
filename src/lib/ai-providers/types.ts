@@ -43,7 +43,7 @@ export interface ProviderTurnInput {
   prompt: string;
   currentPdfPath?: string | null;
   selectedText?: string | null;
-  screenshotPath?: string | null;
+  screenshotPaths?: string[];
 }
 
 export interface ProviderTurnResult {
