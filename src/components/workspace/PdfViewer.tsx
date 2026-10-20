@@ -5,6 +5,7 @@ import { useWorkspace } from '@/lib/workspace-store';
 import { MAX_SCREENSHOTS } from '@/lib/screenshot-limits';
 import { Highlight } from '@/types';
 import { getHighlightRects, mergeHighlights, normalizeHighlightRects, type HighlightRect } from '@/lib/highlight-utils';
+import { installPdfSelectionGuard } from '@/lib/pdf-text-selection';
 import { MarkdownPreviewDialog } from '@/components/common/MarkdownPreviewDialog';
 import { NotesDialog } from '@/components/workspace/NotesDialog';
 import {
@@ -23,8 +24,14 @@ import {
   Save,
   Camera,
   NotebookPen,
+  Volume2,
+  Pause,
+  Play,
+  Square,
 } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
+import { selectionSpeechItems } from '@/lib/pdf-speech-text';
+import { useSpeechPlayer } from '@/components/workspace/useSpeechPlayer';
 
 pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
@@ -74,6 +81,7 @@ export function PdfViewer() {
     activeSessionFolder,
     chatOpen,
     toggleChat,
+    selectedText,
     setSelectedText,
     screenshots,
     addScreenshot,
@@ -146,6 +154,8 @@ export function PdfViewer() {
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => installPdfSelectionGuard(), []);
 
   useEffect(() => {
     if (!selectionNotice) return;
@@ -324,6 +334,15 @@ export function PdfViewer() {
     }
 
     setPageNumber(nextPage);
+  };
+
+  const speech = useSpeechPlayer();
+  const stopSpeech = speech.stop;
+
+  useEffect(() => stopSpeech, [activePdfPath, stopSpeech]);
+
+  const handleReadSelection = () => {
+    void speech.start(selectionSpeechItems(selectedText ?? ''));
   };
 
   const getSelectionRects = (pageShell: HTMLDivElement | null): HighlightRect[] => {
@@ -713,6 +732,22 @@ export function PdfViewer() {
     setExportDialogOpen(false);
   };
 
+  const handleSelectionEnd = (targetPage: number) => {
+    const pageShell = pageShellRefs.current[targetPage];
+
+    if (eraseMode) {
+      void handleEraseSelection(targetPage, pageShell);
+      return;
+    }
+
+    if (highlightMode) {
+      void handleHighlightSelection(targetPage, pageShell);
+      return;
+    }
+
+    handlePlainTextSelection();
+  };
+
   const renderPageShell = (targetPage: number) => {
     const pageHighlights = highlightsByPage[targetPage] ?? [];
 
@@ -727,24 +762,13 @@ export function PdfViewer() {
         onMouseDown={(event) => {
           if (screenshotMode) {
             handleScreenshotMouseDown(targetPage, pageShellRefs.current[targetPage], event);
-          }
-        }}
-        onMouseUp={() => {
-          if (screenshotMode) return;
-
-          const pageShell = pageShellRefs.current[targetPage];
-
-          if (eraseMode) {
-            void handleEraseSelection(targetPage, pageShell);
             return;
           }
 
-          if (highlightMode) {
-            void handleHighlightSelection(targetPage, pageShell);
-            return;
-          }
+          if (event.button !== 0) return;
 
-          handlePlainTextSelection();
+          // Listen on window so a drag that ends outside the page still finishes the selection.
+          window.addEventListener('mouseup', () => handleSelectionEnd(targetPage), { once: true });
         }}
       >
         <Page
@@ -990,6 +1014,52 @@ export function PdfViewer() {
           >
             <NotebookPen size={12} strokeWidth={2} />
           </button>
+
+          {(speech.status !== 'idle' || selectedText) && (
+            <>
+              <div className="w-px h-4 bg-outline-variant/30 mx-0.5" />
+
+              {speech.status === 'idle' || speech.status === 'error' ? (
+                <button
+                  onClick={handleReadSelection}
+                  className={`w-6 h-6 rounded flex items-center justify-center transition-colors hover:bg-surface-container-high ${
+                    speech.status === 'error' ? 'text-error' : 'text-on-surface-variant'
+                  }`}
+                  title={
+                    speech.status === 'error'
+                      ? 'Nothing readable in the selection, or the audio failed. Click to retry'
+                      : 'Read the selected text aloud (formulas are skipped)'
+                  }
+                >
+                  <Volume2 size={12} strokeWidth={2} />
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={speech.status === 'paused' ? speech.resume : speech.pause}
+                    disabled={speech.status === 'loading'}
+                    className="w-6 h-6 rounded flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors disabled:opacity-60"
+                    title={speech.status === 'paused' ? 'Resume reading' : speech.status === 'loading' ? 'Loading audio...' : 'Pause reading'}
+                  >
+                    {speech.status === 'loading' ? (
+                      <Loader2 size={12} strokeWidth={2} className="animate-spin" />
+                    ) : speech.status === 'paused' ? (
+                      <Play size={12} strokeWidth={2} />
+                    ) : (
+                      <Pause size={12} strokeWidth={2} />
+                    )}
+                  </button>
+                  <button
+                    onClick={stopSpeech}
+                    className="w-6 h-6 rounded flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors"
+                    title="Stop reading"
+                  >
+                    <Square size={11} strokeWidth={2} />
+                  </button>
+                </>
+              )}
+            </>
+          )}
           <a
             href={fileUrl}
             download={activePdf.name}

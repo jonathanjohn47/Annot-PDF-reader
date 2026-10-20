@@ -55,3 +55,6 @@ CLAUDE.md
 dist/
 electron/
 scripts/
+
+# local Edge TTS python environment (see src/app/api/tts/route.ts)
+.tts-venv/

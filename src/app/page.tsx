@@ -125,7 +125,7 @@ export default function AppPage() {
   }, []);
 
   const setSelectedText = useCallback((text: string | null) => {
-    setState((s) => ({ ...s, selectedText: text }));
+    setState((s) => (s.selectedText === text ? s : { ...s, selectedText: text }));
   }, []);
 
   const addScreenshot = useCallback((screenshot: ScreenshotAttachment) => {
