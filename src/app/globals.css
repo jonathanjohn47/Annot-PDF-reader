@@ -1,11 +1,10 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,300;1,6..72,400;1,6..72,500&display=swap');
 @import "tailwindcss";
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: 'Manrope', sans-serif;
-  --font-serif: 'Newsreader', serif;
+  --font-sans: Calibri, 'Carlito', sans-serif;
+  --font-serif: Calibri, 'Carlito', sans-serif;
 
   /* Surface Hierarchy */
   --color-surface: #f7fafc;
@@ -51,7 +50,7 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: 'Manrope', sans-serif;
+  font-family: Calibri, 'Carlito', sans-serif;
 }
 
 /* Scrollbar styling */
@@ -72,11 +71,11 @@ body {
 
 /* Typography utilities */
 .font-editorial {
-  font-family: 'Newsreader', serif;
+  font-family: Calibri, 'Carlito', sans-serif;
 }
 
 .font-functional {
-  font-family: 'Manrope', sans-serif;
+  font-family: Calibri, 'Carlito', sans-serif;
 }
 
 /* Glass effect */
@@ -121,7 +120,7 @@ body {
 }
 
 .chat-markdown code {
-  font-family: 'Manrope', sans-serif;
+  font-family: Calibri, 'Carlito', sans-serif;
 }
 
 .pdf-page-shell {

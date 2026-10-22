@@ -8,7 +8,7 @@ export async function GET() {
   <title>Codex Login Required — Annot</title>
   <style>
     body {
-      font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-family: Calibri, 'Carlito', -apple-system, BlinkMacSystemFont, sans-serif;
       display: flex;
       align-items: center;
       justify-content: center;

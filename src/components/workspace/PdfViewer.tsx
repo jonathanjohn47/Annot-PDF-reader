@@ -6,6 +6,7 @@ import { MAX_SCREENSHOTS } from '@/lib/screenshot-limits';
 import { Highlight } from '@/types';
 import { getHighlightRects, mergeHighlights, normalizeHighlightRects, type HighlightRect } from '@/lib/highlight-utils';
 import { installPdfSelectionGuard } from '@/lib/pdf-text-selection';
+import { readStoredPdfPage, writeStoredPdfPage } from '@/lib/pdf-reading-position';
 import { MarkdownPreviewDialog } from '@/components/common/MarkdownPreviewDialog';
 import { NotesDialog } from '@/components/workspace/NotesDialog';
 import {
@@ -39,6 +40,9 @@ const HIGHLIGHTS_STORAGE_KEY = 'annot-pdf-highlights';
 
 type HighlightMode = Highlight['type'] | null;
 type PdfViewMode = 'paged' | 'scroll';
+
+// Give up re-aligning to the bookmarked page if pages never finish rendering (e.g. a broken page).
+const RESTORE_PAGE_TIMEOUT_MS = 8000;
 
 function loadHighlights(): Record<string, Highlight[]> {
   if (typeof window === 'undefined') return {};
@@ -89,8 +93,8 @@ export function PdfViewer() {
     setScreenshotMode,
   } = useWorkspace();
   const activePdfPath = activePdf?.path ?? '';
-  const [zoom, setZoom] = useState(125);
-  const [pageNumber, setPageNumber] = useState(1);
+  const [zoom, setZoom] = useState(100);
+  const [pageNumber, setPageNumber] = useState(() => readStoredPdfPage(activePdfPath));
   const [numPages, setNumPages] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<PdfViewMode>('scroll');
   const [containerWidth, setContainerWidth] = useState(720);
@@ -118,6 +122,9 @@ export function PdfViewer() {
   const containerRef = useRef<HTMLDivElement>(null);
   const pageShellRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const canvasRefs = useRef<Record<number, HTMLCanvasElement | null>>({});
+  // Page we are scrolling back to after reopening the PDF. Null once restoring is finished.
+  const restorePageRef = useRef<number | null>(null);
+  const renderedPagesRef = useRef<Set<number>>(new Set());
   const screenshotDragRef = useRef<{
     targetPage: number;
     shell: HTMLDivElement;
@@ -279,6 +286,9 @@ export function PdfViewer() {
 
     const observer = new IntersectionObserver(
       (entries) => {
+        // While restoring, the observer would report page 1 and overwrite the bookmark.
+        if (restorePageRef.current !== null) return;
+
         const visibleEntries = entries
           .filter((entry) => entry.isIntersecting)
           .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
@@ -306,10 +316,56 @@ export function PdfViewer() {
     return () => observer.disconnect();
   }, [viewMode, numPages, pageWidth, activePdfPath]);
 
-  const handleDocumentLoadSuccess = ({ numPages: nextNumPages }: { numPages: number }) => {
-    setNumPages(nextNumPages);
-    setPageNumber((current) => Math.min(current, nextNumPages));
+  const finishRestore = () => {
+    restorePageRef.current = null;
   };
+
+  // Pages above the bookmark change height as they render, which pushes the bookmarked page away.
+  // Re-align after each render until every page above it is done, or the user takes over.
+  const handlePageRenderSuccess = (renderedPage: number) => {
+    const restorePage = restorePageRef.current;
+    if (restorePage === null) return;
+
+    renderedPagesRef.current.add(renderedPage);
+    pageShellRefs.current[restorePage]?.scrollIntoView({ block: 'start' });
+
+    for (let page = 1; page <= restorePage; page += 1) {
+      if (!renderedPagesRef.current.has(page)) return;
+    }
+    finishRestore();
+  };
+
+  const handleDocumentLoadSuccess = ({ numPages: nextNumPages }: { numPages: number }) => {
+    const resumePage = Math.min(pageNumber, nextNumPages);
+
+    setNumPages(nextNumPages);
+    setPageNumber(resumePage);
+
+    if (resumePage > 1 && viewMode === 'scroll') {
+      restorePageRef.current = resumePage;
+      renderedPagesRef.current.clear();
+      window.setTimeout(finishRestore, RESTORE_PAGE_TIMEOUT_MS);
+      setSelectionNotice(`Resumed from page ${resumePage}.`);
+    }
+  };
+
+  // Any manual scroll/click means the reader has taken over: stop pulling them back.
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!root) return;
+
+    const events = ['wheel', 'touchstart', 'mousedown', 'keydown'] as const;
+    events.forEach((name) => root.addEventListener(name, finishRestore, { passive: true }));
+
+    return () => {
+      events.forEach((name) => root.removeEventListener(name, finishRestore));
+    };
+  }, []);
+
+  useEffect(() => {
+    if (numPages === null || restorePageRef.current !== null) return;
+    writeStoredPdfPage(activePdfPath, pageNumber);
+  }, [activePdfPath, numPages, pageNumber]);
 
   const canGoPrev = pageNumber > 1;
   const canGoNext = numPages !== null && pageNumber < numPages;
@@ -779,6 +835,7 @@ export function PdfViewer() {
           }}
           renderAnnotationLayer={false}
           renderTextLayer
+          onRenderSuccess={() => handlePageRenderSuccess(targetPage)}
           loading={
             <div className="bg-surface-container-lowest rounded-xl shadow-ambient min-h-[560px] w-full max-w-[900px] flex items-center justify-center gap-2 text-sm text-on-surface-variant">
               <Loader2 size={16} className="animate-spin" />
