@@ -10,6 +10,7 @@ import {
   resolveExecutable,
 } from '@/lib/command-runtime';
 import { buildAnnotPrompt } from '@/lib/prompt-context';
+import type { EditPromptContext } from '@/lib/pdf-edit/edit-prompt';
 
 export interface ClaudeCodeAuthStatus {
   authenticated: boolean;
@@ -46,6 +47,7 @@ interface ClaudeRunTurnInput {
   currentPdfPath?: string | null;
   selectedText?: string | null;
   screenshotPaths?: string[];
+  edit?: EditPromptContext;
 }
 
 interface ClaudeStreamEvent {

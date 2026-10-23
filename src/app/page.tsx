@@ -37,6 +37,8 @@ export default function AppPage() {
     selectedText: null,
     screenshots: [],
     screenshotMode: false,
+    pdfRevision: 0,
+    pdfJump: null,
   });
   const [chatPanelWidth, setChatPanelWidth] = useState(DEFAULT_CHAT_PANEL_WIDTH);
   const [isResizingChat, setIsResizingChat] = useState(false);
@@ -146,6 +148,14 @@ export default function AppPage() {
 
   const setScreenshotMode = useCallback((active: boolean) => {
     setState((s) => ({ ...s, screenshotMode: active }));
+  }, []);
+
+  const notifyPdfEdited = useCallback((page?: number) => {
+    setState((s) => ({
+      ...s,
+      pdfRevision: s.pdfRevision + 1,
+      pdfJump: page ? { page, nonce: s.pdfRevision + 1 } : s.pdfJump,
+    }));
   }, []);
 
   const refreshTree = useCallback(async () => {
@@ -304,6 +314,7 @@ export default function AppPage() {
     removeScreenshot,
     clearScreenshots,
     setScreenshotMode,
+    notifyPdfEdited,
   };
   const contextValue = { ...ctx, refreshTree };
 

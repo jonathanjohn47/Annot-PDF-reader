@@ -1,5 +1,6 @@
 import { getWorkspaceRoot } from '@/lib/annot-sessions';
 import { SessionKind } from '@/types';
+import { buildEditPromptLines, type EditPromptContext } from '@/lib/pdf-edit/edit-prompt';
 
 export interface AnnotPromptInput {
   folderPath: string;
@@ -10,6 +11,8 @@ export interface AnnotPromptInput {
   screenshotPaths?: string[];
   /** True when resuming an existing provider session, which already holds the PDF and the rules from turn one. */
   isFollowUp?: boolean;
+  /** PDF-editing instructions for this message; absent means editing is off. */
+  edit?: EditPromptContext;
 }
 
 function describeScreenshots(
@@ -165,6 +168,9 @@ export function buildAnnotPrompt(input: AnnotPromptInput, screenshotInstruction:
     '<<<ANNOT_NOTE_END>>>',
     `- Only emit this block when a PDF is currently open in the viewer (${currentPdfPath ? 'one is open now, per above' : 'none is open right now'}) and the user is genuinely asking for something to be saved as a note — never for ordinary questions or explanations. If they ask to save a note but no PDF is open, say in your normal reply that they should open a PDF first, and do not emit the block.`,
     '',
+    'Editing the PDF itself:',
+    ...buildEditPromptLines(input.edit ?? { allowed: false }),
+    '',
     'User request:',
     prompt,
   ];
@@ -201,6 +207,9 @@ function buildFollowUpPrompt(input: AnnotPromptInput, screenshotInstruction: str
         ]
       : []),
     ...describeScreenshots(screenshotPaths, screenshotInstruction, false),
+    '',
+    'Editing the PDF itself (this message):',
+    ...buildEditPromptLines(input.edit ?? { allowed: false }),
     '',
     'User request:',
     prompt,

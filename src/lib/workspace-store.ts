@@ -35,6 +35,10 @@ export interface WorkspaceState {
   screenshots: ScreenshotAttachment[];
   // Whether the PDF viewer is in screenshot-capture (drag-to-select) mode
   screenshotMode: boolean;
+  // Bumped whenever the PDF file itself was changed by an edit, undo or redo, so the viewer reloads it
+  pdfRevision: number;
+  // One-shot request for the viewer to scroll to a page (after an edit is applied)
+  pdfJump: { page: number; nonce: number } | null;
 }
 
 export interface WorkspaceActions {
@@ -51,6 +55,7 @@ export interface WorkspaceActions {
   removeScreenshot: (path: string) => void;
   clearScreenshots: () => void;
   setScreenshotMode: (active: boolean) => void;
+  notifyPdfEdited: (page?: number) => void;
 }
 
 export type WorkspaceContextType = WorkspaceState & WorkspaceActions;

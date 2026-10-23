@@ -7,7 +7,10 @@
     "dev": "node scripts/dev.mjs",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "npm run test:py && npm run test:ts",
+    "test:py": "python3 -m unittest discover -s tests/python",
+    "test:ts": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"tests/ts/*.test.ts\""
   },
   "dependencies": {
     "@fontsource/carlito": "^5.3.0",

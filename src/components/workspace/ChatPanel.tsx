@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown, SquarePen, RefreshCw, Copy, Check, MessageCircleQuestion } from 'lucide-react';
+import { FilePenLine, Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown, SquarePen, RefreshCw, Copy, Check, MessageCircleQuestion } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { CodeBlockPre } from '@/components/common/CodeBlockPre';
 import remarkGfm from 'remark-gfm';
@@ -11,6 +11,8 @@ import { DEFAULT_AI_PROVIDER } from '@/lib/ai-providers/config';
 import { MarkdownPreviewDialog } from '@/components/common/MarkdownPreviewDialog';
 import { AskQuestionSelector } from '@/components/workspace/AskQuestionSelector';
 import { AskQuestionDialog } from '@/components/workspace/AskQuestionDialog';
+import { EditProposalCard } from '@/components/workspace/EditProposalCard';
+import { readAutoApplySmall, readEditMode, writeAutoApplySmall, writeEditMode } from '@/lib/pdf-edit/edit-preferences';
 import { buildSessionSummaryMarkdown, getSessionSummaryMarkdownFileName } from '@/lib/session-summary-markdown';
 import { useWorkspace } from '@/lib/workspace-store';
 import { normalizeMathMarkdown } from '@/lib/markdown-math';
@@ -120,6 +122,7 @@ export function ChatPanel() {
     screenshots,
     removeScreenshot,
     clearScreenshots,
+    notifyPdfEdited,
   } = useWorkspace();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -142,6 +145,8 @@ export function ChatPanel() {
   const [newChatError, setNewChatError] = useState('');
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [askWholeMessage, setAskWholeMessage] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState(readEditMode);
+  const [autoApplySmall, setAutoApplySmall] = useState(readAutoApplySmall);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const skipSessionHydrationRef = useRef<string | null>(null);
@@ -681,6 +686,19 @@ export function ChatPanel() {
     return finalContent;
   };
 
+  // A small addition may have been applied straight away; make the viewer reload the PDF in that case.
+  const notifyIfApplied = async (proposalId: string) => {
+    const pdfPath = activeSessionKind === 'pdf' ? (activeSessionPdfPath || activePdf?.path) : activePdf?.path;
+    if (!pdfPath) return;
+    try {
+      const res = await fetch(`/api/workspace/edits?path=${encodeURIComponent(pdfPath)}&proposal=${encodeURIComponent(proposalId)}`, { cache: 'no-store' });
+      const data = await res.json();
+      if (res.ok && data?.proposal?.status === 'applied') notifyPdfEdited(data.proposal.marks?.[0]?.page);
+    } catch {
+      // the card shows the real state when it loads
+    }
+  };
+
   const handleStreamEvent = (
     sessionId: string,
     event: ChatStreamEvent,
@@ -715,6 +733,9 @@ export function ChatPanel() {
             model: event.model || fallbackModel,
           },
         ];
+
+      const proposalId = sessionMessages[sessionMessages.length - 1]?.proposalId;
+      if (proposalId) void notifyIfApplied(proposalId);
 
       commitSessionUiState(sessionId, (current) => ({
         ...current,
@@ -796,6 +817,8 @@ export function ChatPanel() {
             : (activePdf?.path || null),
             selectedText: selectedText || null,
             screenshotPaths: screenshots.map((item) => item.path),
+            editMode,
+            autoApplyNarrow: autoApplySmall,
         }),
       });
 
@@ -1228,6 +1251,9 @@ export function ChatPanel() {
                       {normalizeMathMarkdown(msg.content)}
                     </ReactMarkdown>
                   </div>
+                  {msg.proposalId && (activeSessionPdfPath || activePdf?.path) && (
+                    <EditProposalCard pdfPath={(activeSessionPdfPath || activePdf?.path) as string} proposalId={msg.proposalId} />
+                  )}
                   <div className="mt-1 flex items-center gap-1">
                     <button
                       onClick={() => void handleCopyMessage(msg)}
@@ -1361,6 +1387,33 @@ export function ChatPanel() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+        {(activePdf || activeSessionPdfPath) && (
+          <div className="mb-1.5 flex items-center gap-3 text-[10px] text-on-surface-variant">
+            <button
+              type="button"
+              onClick={() => { const next = !editMode; setEditMode(next); writeEditMode(next); }}
+              aria-pressed={editMode}
+              title="When on, the assistant may propose changes to the PDF itself. You always see a preview first (small additions can be applied directly if you choose)."
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-1 font-medium transition-colors ${
+                editMode ? 'bg-on-surface text-surface-container-lowest' : 'bg-surface-container hover:bg-surface-container-high'
+              }`}
+            >
+              <FilePenLine size={10} strokeWidth={2} />
+              {editMode ? 'PDF edit mode: on' : 'PDF edit mode: off'}
+            </button>
+            {editMode && (
+              <label className="inline-flex cursor-pointer items-center gap-1">
+                <input
+                  type="checkbox"
+                  checked={autoApplySmall}
+                  onChange={(e) => { setAutoApplySmall(e.target.checked); writeAutoApplySmall(e.target.checked); }}
+                />
+                Apply small additions without preview
+              </label>
+            )}
+            {!editMode && <span>Questions never change the PDF.</span>}
           </div>
         )}
         <div className="flex items-end gap-2 bg-surface-container-low rounded-xl px-3 py-2.5">

@@ -10,6 +10,7 @@ import {
   resolveExecutable,
 } from '@/lib/command-runtime';
 import { buildAnnotPrompt } from '@/lib/prompt-context';
+import type { EditPromptContext } from '@/lib/pdf-edit/edit-prompt';
 
 export interface ExecResult {
   codexSessionId: string;
@@ -39,6 +40,7 @@ interface RunTurnInput {
   currentPdfPath?: string | null;
   selectedText?: string | null;
   screenshotPaths?: string[];
+  edit?: EditPromptContext;
 }
 
 interface ParsedEvent {

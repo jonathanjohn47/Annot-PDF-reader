@@ -1,4 +1,5 @@
 import { buildAnnotPrompt } from '@/lib/prompt-context';
+import type { EditPromptContext } from '@/lib/pdf-edit/edit-prompt';
 
 const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://localhost:11434';
 export const DEFAULT_OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.1:8b';
@@ -34,6 +35,7 @@ interface OllamaRunTurnInput {
   currentPdfPath?: string | null;
   selectedText?: string | null;
   screenshotPaths?: string[];
+  edit?: EditPromptContext;
 }
 
 interface OllamaChatMessage {

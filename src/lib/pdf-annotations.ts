@@ -1,8 +1,7 @@
 import { spawn } from 'child_process';
-import os from 'os';
 import path from 'path';
 
-import { buildExecutableCandidates, resolveExecutable } from '@/lib/command-runtime';
+import { getPythonCommand } from '@/lib/python-runtime';
 import { mergeHighlights, normalizeHighlightRects } from '@/lib/highlight-utils';
 import { resolveFolderPath } from '@/lib/annot-sessions';
 import { Highlight } from '@/types';
@@ -35,11 +34,6 @@ interface PdfAnnotationResponse {
 }
 
 type PdfAnnotationAction = 'list' | 'upsert' | 'delete' | 'update';
-
-interface ResolvedPythonCommand {
-  command: string;
-  argsPrefix: string[];
-}
 
 const PYTHON_PDF_ANNOTATION_SCRIPT = String.raw`
 import json
@@ -358,86 +352,9 @@ finally:
     doc.close()
 `;
 
-let resolvedPythonCommandPromise: Promise<ResolvedPythonCommand> | null = null;
-
-function getPythonCandidates(): string[] {
-  const home = os.homedir();
-  return buildExecutableCandidates(
-    [
-      process.env.ANNOT_PYTHON_BIN,
-      process.env.PYTHON_BIN,
-      process.env.PYTHON,
-    ],
-    'python',
-    [
-      path.join(home, 'AppData', 'Local', 'Programs', 'Python', 'Python313', 'python'),
-      path.join(home, 'AppData', 'Local', 'Programs', 'Python', 'Python312', 'python'),
-      path.join(home, 'AppData', 'Local', 'Programs', 'Python', 'Python311', 'python'),
-      path.join(home, 'miniconda3', 'python'),
-      path.join(home, 'anaconda3', 'python'),
-      path.join('/usr/local/bin', 'python3'),
-      path.join('/opt/homebrew/bin', 'python3'),
-      path.join('/usr/bin', 'python3'),
-      path.join(process.env.SystemRoot || 'C:\\Windows', 'py'),
-    ],
-  );
-}
-
-async function resolvePythonCommand(): Promise<ResolvedPythonCommand> {
-  const candidates = [
-    ...buildExecutableCandidates(
-      [
-        process.env.ANNOT_PYTHON_BIN,
-        process.env.PYTHON_BIN,
-      ],
-      'python3',
-      [],
-    ),
-    ...getPythonCandidates(),
-    ...buildExecutableCandidates(
-      [
-        process.env.ANNOT_PYTHON_LAUNCHER,
-      ],
-      'py',
-      [
-        path.join(process.env.SystemRoot || 'C:\\Windows', 'py'),
-      ],
-    ),
-  ];
-
-  const executable = await resolveExecutable([...new Set(candidates)]);
-  if (!executable) {
-    throw new Error(
-      'Could not find a Python 3 executable. Set ANNOT_PYTHON_BIN to the full path to python if needed.',
-    );
-  }
-
-  if (/([\\/]|^)py(\.exe)?$/i.test(executable)) {
-    return {
-      command: executable,
-      argsPrefix: ['-3'],
-    };
-  }
-
-  return {
-    command: executable,
-    argsPrefix: [],
-  };
-}
-
 function runPdfAnnotationScript(payload: Record<string, unknown>): Promise<PdfAnnotationResponse> {
-  if (!resolvedPythonCommandPromise) {
-    resolvedPythonCommandPromise = resolvePythonCommand();
-  }
-
   return new Promise((resolve, reject) => {
-    const pythonCommandPromise = resolvedPythonCommandPromise;
-    if (!pythonCommandPromise) {
-      reject(new Error('Python command resolution was not initialized'));
-      return;
-    }
-
-    void pythonCommandPromise.then((python) => {
+    void getPythonCommand().then((python) => {
       const child = spawn(python.command, [...python.argsPrefix, '-c', PYTHON_PDF_ANNOTATION_SCRIPT], {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: process.env,

@@ -1,4 +1,5 @@
 import { SessionKind, AIProvider } from '@/types';
+import type { EditPromptContext } from '@/lib/pdf-edit/edit-prompt';
 
 export interface ProviderModel {
   id: string;
@@ -44,6 +45,8 @@ export interface ProviderTurnInput {
   currentPdfPath?: string | null;
   selectedText?: string | null;
   screenshotPaths?: string[];
+  /** PDF-editing instructions for this turn (see lib/pdf-edit). Absent means editing is not offered. */
+  edit?: EditPromptContext;
 }
 
 export interface ProviderTurnResult {

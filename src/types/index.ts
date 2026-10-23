@@ -36,6 +36,8 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   model?: string;
+  /** Id of the PDF edit proposal this reply produced (see lib/pdf-edit). */
+  proposalId?: string;
 }
 
 export interface SessionTurnSummary {

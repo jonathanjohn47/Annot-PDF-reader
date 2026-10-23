@@ -4,6 +4,7 @@ import { getProviderRuntime } from '@/lib/ai-providers';
 import { createPdfNote } from '@/lib/pdf-notes';
 import { MAX_SCREENSHOTS } from '@/lib/screenshot-limits';
 import { appendNoteSavedConfirmation, extractNoteDirective } from '@/lib/note-directive';
+import { buildEditContext, processEditReply } from '@/lib/pdf-edit/chat-integration';
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,6 +17,8 @@ export async function POST(req: NextRequest) {
       currentPdfPath,
       selectedText,
       screenshotPaths,
+      editMode,
+      autoApplyNarrow,
     } = body as {
       folderPath?: string;
       sessionId?: string;
@@ -24,6 +27,8 @@ export async function POST(req: NextRequest) {
       currentPdfPath?: string | null;
       selectedText?: string | null;
       screenshotPaths?: string[] | null;
+      editMode?: boolean;
+      autoApplyNarrow?: boolean;
     };
 
     if (!folderPath || !sessionId || !prompt?.trim()) {
@@ -68,24 +73,50 @@ export async function POST(req: NextRequest) {
         void (async () => {
           try {
             const resolvedPdfPath = currentPdfPath ?? session.pdfPath ?? null;
-            const turn = await runtime.runTurn({
-              providerSessionId: session.providerSessionId,
+            const edit = await buildEditContext({
+              pdfPath: resolvedPdfPath,
+              provider: session.provider,
+              prompt: prompt.trim(),
+              editMode: editMode === true,
+            });
+            const turnInput = {
               model: resolvedModel,
               folderPath,
-              prompt: prompt.trim(),
               sessionKind: session.sessionKind,
               currentPdfPath: resolvedPdfPath,
               selectedText: selectedText ?? null,
               screenshotPaths: Array.isArray(screenshotPaths)
                 ? screenshotPaths.filter((item) => typeof item === 'string' && item.trim()).slice(0, MAX_SCREENSHOTS)
                 : [],
+              edit: edit.prompt,
+            };
+            const turn = await runtime.runTurn({
+              ...turnInput,
+              providerSessionId: session.providerSessionId,
+              prompt: prompt.trim(),
             }, {
               onEvent: (event) => {
                 writeEvent(event);
               },
             });
 
-            const { cleanedContent, note } = extractNoteDirective(turn.content);
+            // A PDF edit proposal is validated and stored as a preview; the PDF itself is not touched here.
+            const editResult = resolvedPdfPath
+              ? await processEditReply({
+                content: turn.content,
+                providerSessionId: turn.providerSessionId,
+                edit,
+                pdfPath: resolvedPdfPath,
+                sessionId,
+                userPrompt: prompt.trim(),
+                autoApplyNarrow: autoApplyNarrow === true,
+                runtime,
+                turnInput,
+                onEvent: (event) => writeEvent(event),
+              })
+              : { content: turn.content, providerSessionId: turn.providerSessionId, proposalId: undefined };
+
+            const { cleanedContent, note } = extractNoteDirective(editResult.content);
             let finalContent = cleanedContent;
 
             if (note && resolvedPdfPath) {
@@ -99,6 +130,7 @@ export async function POST(req: NextRequest) {
               content: finalContent,
               timestamp: new Date().toISOString(),
               model: resolvedModel,
+              ...(editResult.proposalId ? { proposalId: editResult.proposalId } : {}),
             };
 
             const nextMessages = appendMessage(
@@ -109,7 +141,7 @@ export async function POST(req: NextRequest) {
             const messageSavedSession = await updateSession(folderPath, sessionId, {
               messages: nextMessages,
               provider: session.provider,
-              providerSessionId: turn.providerSessionId,
+              providerSessionId: editResult.providerSessionId,
               model: resolvedModel,
             });
 

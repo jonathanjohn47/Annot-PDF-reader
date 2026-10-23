@@ -9,6 +9,8 @@ import { installPdfSelectionGuard } from '@/lib/pdf-text-selection';
 import { readStoredPdfPage, writeStoredPdfPage } from '@/lib/pdf-reading-position';
 import { MarkdownPreviewDialog } from '@/components/common/MarkdownPreviewDialog';
 import { NotesDialog } from '@/components/workspace/NotesDialog';
+import { EditHistoryDialog } from '@/components/workspace/EditHistoryDialog';
+import type { EditSummary } from '@/lib/pdf-edit/types';
 import {
   Minus,
   Plus,
@@ -29,6 +31,7 @@ import {
   Pause,
   Play,
   Square,
+  History,
 } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { selectionSpeechItems } from '@/lib/pdf-speech-text';
@@ -91,6 +94,9 @@ export function PdfViewer() {
     addScreenshot,
     screenshotMode,
     setScreenshotMode,
+    pdfRevision,
+    pdfJump,
+    notifyPdfEdited,
   } = useWorkspace();
   const activePdfPath = activePdf?.path ?? '';
   const [zoom, setZoom] = useState(100);
@@ -119,6 +125,11 @@ export function PdfViewer() {
   const [exportLoading, setExportLoading] = useState(false);
   const [exportMarkdown, setExportMarkdown] = useState('');
   const [notesOpen, setNotesOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [editSummary, setEditSummary] = useState<EditSummary | null>(null);
+  // Page to scroll to once the reloaded PDF is ready (after an edit is applied).
+  const pendingJumpRef = useRef<number | null>(null);
+  const lastJumpNonceRef = useRef<number>(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const pageShellRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const canvasRefs = useRef<Record<number, HTMLCanvasElement | null>>({});
@@ -134,8 +145,8 @@ export function PdfViewer() {
   } | null>(null);
 
   const fileUrl = useMemo(
-    () => `/api/workspace/file?path=${encodeURIComponent(activePdfPath)}`,
-    [activePdfPath],
+    () => `/api/workspace/file?path=${encodeURIComponent(activePdfPath)}&rev=${pdfRevision}`,
+    [activePdfPath, pdfRevision],
   );
   const exportUrl = useMemo(
     () => `/api/workspace/export?path=${encodeURIComponent(activePdfPath)}&format=markdown`,
@@ -259,7 +270,7 @@ export function PdfViewer() {
     return () => {
       cancelled = true;
     };
-  }, [activePdfPath]);
+  }, [activePdfPath, pdfRevision]);
 
   useEffect(() => {
     if (!selectedHighlightKey) {
@@ -316,6 +327,29 @@ export function PdfViewer() {
     return () => observer.disconnect();
   }, [viewMode, numPages, pageWidth, activePdfPath]);
 
+  // Which pages were touched by edits (for the small badges), refreshed whenever the PDF is edited, undone or redone.
+  useEffect(() => {
+    if (!activePdfPath) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/workspace/edits?path=${encodeURIComponent(activePdfPath)}`, { cache: 'no-store' });
+        const data = await res.json();
+        if (!cancelled && res.ok && data?.summary) setEditSummary(data.summary as EditSummary);
+      } catch {
+        if (!cancelled) setEditSummary(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activePdfPath, pdfRevision]);
+
+  useEffect(() => {
+    if (pdfJump && pdfJump.nonce !== lastJumpNonceRef.current) {
+      lastJumpNonceRef.current = pdfJump.nonce;
+      pendingJumpRef.current = pdfJump.page;
+    }
+  }, [pdfJump]);
+
   const finishRestore = () => {
     restorePageRef.current = null;
   };
@@ -336,7 +370,9 @@ export function PdfViewer() {
   };
 
   const handleDocumentLoadSuccess = ({ numPages: nextNumPages }: { numPages: number }) => {
-    const resumePage = Math.min(pageNumber, nextNumPages);
+    const jumpPage = pendingJumpRef.current;
+    pendingJumpRef.current = null;
+    const resumePage = Math.min(jumpPage ?? pageNumber, nextNumPages);
 
     setNumPages(nextNumPages);
     setPageNumber(resumePage);
@@ -345,7 +381,7 @@ export function PdfViewer() {
       restorePageRef.current = resumePage;
       renderedPagesRef.current.clear();
       window.setTimeout(finishRestore, RESTORE_PAGE_TIMEOUT_MS);
-      setSelectionNotice(`Resumed from page ${resumePage}.`);
+      setSelectionNotice(jumpPage ? `Showing page ${resumePage}, where the PDF was edited.` : `Resumed from page ${resumePage}.`);
     }
   };
 
@@ -367,6 +403,11 @@ export function PdfViewer() {
     writeStoredPdfPage(activePdfPath, pageNumber);
   }, [activePdfPath, numPages, pageNumber]);
 
+  const editMarkByPage = useMemo(() => {
+    const out: Record<number, 'added' | 'changed'> = {};
+    for (const mark of editSummary?.marks ?? []) out[mark.page] = mark.kind;
+    return out;
+  }, [editSummary]);
   const canGoPrev = pageNumber > 1;
   const canGoNext = numPages !== null && pageNumber < numPages;
   const highlightsByPage = useMemo(() => {
@@ -848,6 +889,16 @@ export function PdfViewer() {
             </div>
           }
         />
+        {editMarkByPage[targetPage] && (
+          <div
+            className={`pointer-events-none absolute right-2 top-2 z-10 rounded-full px-2 py-0.5 text-[10px] font-medium shadow ${
+              editMarkByPage[targetPage] === 'added' ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
+            }`}
+            title="Changed by a PDF edit. Open Edit history to undo."
+          >
+            {editMarkByPage[targetPage] === 'added' ? 'Added' : 'Edited'}
+          </div>
+        )}
         <div className={`pdf-highlight-layer ${!highlightMode && !eraseMode ? 'pdf-highlight-layer--interactive' : ''}`}>
           {pageHighlights.map((highlight) => {
             const rects = getHighlightRects(highlight);
@@ -1117,6 +1168,18 @@ export function PdfViewer() {
               )}
             </>
           )}
+          <button
+            onClick={() => setHistoryOpen(true)}
+            className={`relative w-6 h-6 rounded flex items-center justify-center transition-colors ${
+              historyOpen ? 'bg-on-surface text-surface-container-lowest' : 'text-on-surface-variant hover:bg-surface-container-high'
+            }`}
+            title="PDF edit history: undo, redo, restore the original"
+          >
+            <History size={12} strokeWidth={2} />
+            {(editSummary?.entries.length ?? 0) > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-amber-500" />
+            )}
+          </button>
           <a
             href={fileUrl}
             download={activePdf.name}
@@ -1217,6 +1280,16 @@ export function PdfViewer() {
         confirmLabel="Download Markdown"
         onCancel={() => setExportDialogOpen(false)}
         onConfirm={handleConfirmExport}
+      />
+
+      <EditHistoryDialog
+        open={historyOpen}
+        pdfPath={activePdfPath}
+        pdfName={activePdf.name}
+        revisionKey={pdfRevision}
+        onClose={() => setHistoryOpen(false)}
+        onChanged={() => notifyPdfEdited()}
+        onGoToPage={(page) => handlePageChange(page)}
       />
 
       <NotesDialog

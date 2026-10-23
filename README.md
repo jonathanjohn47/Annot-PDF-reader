@@ -97,6 +97,21 @@ Then open:
 http://localhost:3000
 ```
 
+## Editing the PDF with the assistant
+
+The assistant can improve the PDF itself (add an explanation or diagram, revise, remove or reorganise material), but only when you ask for a change ("add a diagram of this to the PDF") or switch on **PDF edit mode** above the chat input. Plain questions never touch the file.
+
+How it works:
+
+1. The assistant reads the document (outline, exact paragraph text, term search via `pdf-engine/annot_pdf_edit.py`) and proposes typed operations. It cannot write to the PDF directly.
+2. Annot checks the proposal against the PDF: quotes exist, every number is a sourced fact or checked arithmetic, terms are defined before first use, existing explanations are not duplicated, causal wording is backed by the document, and the rendered result keeps all original text. Problems go back to the assistant to fix.
+3. You get a preview card in the chat: what changes and why, the before and after pages (new material outlined in green), and any warnings. **Apply to PDF** or **Discard**. Small additive edits can be applied directly if you tick the option.
+4. Applied edits are revisions. The PDF toolbar's history button gives **Undo / Redo / Restore original**. The original is kept in `.annot/edits/<pdf name>/states/s0000.pdf` next to the PDF.
+
+Limits: pages with several text columns accept new pages ("new_pages" mode) but not in-flow insertion; equations are plain Unicode text, not typeset LaTeX; replacement text uses a substitute font; diagrams are vector but have no tagged alt text beyond their caption; highlights added after an edit belong to that revision (undo returns the document as it was then).
+
+Run the tests with `npm test` (Python engine tests and TypeScript tests; needs `pymupdf`).
+
 ## First-Time Setup
 
 If this is your first time opening Annot:
