@@ -337,7 +337,7 @@ export function NotesDialog({ open, pdfPath, pdfName, onClose }: NotesDialogProp
                   value={draftContent}
                   onChange={(event) => setDraftContent(event.target.value)}
                   placeholder={'Write your notes here...\n\nUse $...$ for inline LaTeX and $$...$$ for block LaTeX, e.g. $$E = mc^2$$'}
-                  className="flex-1 resize-none bg-transparent px-4 py-3 text-sm text-on-surface outline-none placeholder:text-outline font-editorial"
+                  className="flex-1 resize-none bg-transparent px-4 py-3 text-sm text-on-surface outline-none placeholder:text-outline font-input"
                 />
               </div>
               <div className="flex w-1/2 flex-col overflow-hidden">

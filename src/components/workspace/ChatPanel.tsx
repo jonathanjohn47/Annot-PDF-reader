@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { FilePenLine, Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown, SquarePen, RefreshCw, Copy, Check, MessageCircleQuestion } from 'lucide-react';
+import { FilePenLine, Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown, Plus, Copy, Check, MessageCircleQuestion } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { CodeBlockPre } from '@/components/common/CodeBlockPre';
 import remarkGfm from 'remark-gfm';
@@ -1027,55 +1027,46 @@ export function ChatPanel() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="px-4 py-3 flex items-center justify-between shrink-0">
+      <div className="px-4 py-3 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">{sessionLabel}</h2>
+          <h2 className="truncate whitespace-nowrap text-sm font-semibold text-on-surface-variant">{sessionLabel}</h2>
           {renderSummaryStatus()}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <button
             onClick={() => void handleNewChat()}
             disabled={!activeSessionFolder || !activeSessionKind || newChatLoading}
-            className="flex items-center gap-1 rounded-md bg-surface-container px-2.5 py-1.5 text-[11px] font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-50"
-            title="Start a new chat"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-50"
+            title="New chat"
+            aria-label="New chat"
           >
             {newChatLoading ? (
-              <Loader2 size={11} className="animate-spin" />
+              <Loader2 size={14} className="animate-spin" />
             ) : (
-              <SquarePen size={11} strokeWidth={2} />
+              <Plus size={15} strokeWidth={2} />
             )}
-            New chat
           </button>
           <button
             onClick={() => void handleOpenSummaryExport()}
             disabled={!activeSessionId || exportableTurnCount === 0 || summaryStatus === 'generating'}
-            className="flex items-center gap-1 rounded-md bg-surface-container px-2.5 py-1.5 text-[11px] font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-50"
-            title="Preview summary markdown"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-50"
+            title="Export summary"
+            aria-label="Export summary"
           >
-            <FileDown size={11} strokeWidth={2} />
-            Export
+            <FileDown size={14} strokeWidth={1.75} />
           </button>
           {/* Model selector */}
           <div className="relative">
             {modelsLoading ? (
-              <div className="flex min-w-28 items-center justify-center gap-2 rounded-md bg-emerald-100 px-3 py-1.5 text-[11px] font-semibold text-emerald-700">
+              <div className="flex items-center justify-center gap-2 rounded-md bg-surface-container px-3 py-1.5 text-[11px] font-medium text-on-surface-variant">
                 <Loader2 size={10} className="animate-spin" />
               </div>
-            ) : models.length === 0 ? (
-              <button
-                onClick={() => void fetchModels(selectedProvider)}
-                className="flex items-center gap-1 rounded-md bg-rose-100 px-3 py-1.5 text-[11px] font-semibold text-rose-700 hover:bg-rose-200 transition-colors"
-                title="No models loaded — click to retry"
-              >
-                No models
-                <RefreshCw size={10} strokeWidth={2.5} />
-              </button>
-            ) : (
+            ) : models.length === 0 ? null : (
               <>
                 <select
                   value={selectedModel}
                   onChange={(e) => setSelectedModel(e.target.value)}
-                  className="appearance-none min-w-28 rounded-md bg-emerald-100 pl-3 pr-7 py-1.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-200 transition-colors cursor-pointer"
+                  className="appearance-none whitespace-nowrap rounded-md bg-surface-container pl-3 pr-7 py-1.5 text-[11px] font-medium text-on-surface-variant hover:bg-surface-container-high transition-colors cursor-pointer"
                 >
                   {models.map((model) => (
                     <option key={model.id} value={model.id}>
@@ -1086,7 +1077,7 @@ export function ChatPanel() {
                 <ChevronDown
                   size={10}
                   strokeWidth={2.5}
-                  className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-emerald-700"
+                  className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant"
                 />
               </>
             )}
@@ -1426,7 +1417,7 @@ export function ChatPanel() {
             }}
             placeholder="Ask about your research..."
             rows={1}
-            className="flex-1 bg-transparent text-on-surface outline-none resize-none placeholder:text-outline font-editorial"
+            className="flex-1 bg-transparent text-on-surface outline-none resize-none placeholder:text-outline font-input"
             style={inputFontStyle}
           />
           <button
