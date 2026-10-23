@@ -41,6 +41,7 @@ interface ClaudeRunTurnOptions {
 interface ClaudeRunTurnInput {
   providerSessionId?: string;
   model: string;
+  effort?: 'low' | 'medium' | 'high';
   folderPath: string;
   sessionKind: 'folder' | 'pdf';
   prompt: string;
@@ -155,7 +156,7 @@ function createClaudeArgs(input: ClaudeRunTurnInput): string[] {
     args.push('--model', input.model);
   }
 
-  args.push('--effort', DEFAULT_CLAUDE_EFFORT);
+  args.push('--effort', input.effort ?? DEFAULT_CLAUDE_EFFORT);
 
   args.push(buildPrompt(input));
   return args;

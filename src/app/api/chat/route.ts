@@ -6,6 +6,9 @@ import { MAX_SCREENSHOTS } from '@/lib/screenshot-limits';
 import { appendNoteSavedConfirmation, extractNoteDirective } from '@/lib/note-directive';
 import { buildEditContext, processEditReply } from '@/lib/pdf-edit/chat-integration';
 
+const EDIT_MODEL = 'sonnet';
+const EDIT_EFFORT = 'low' as const;
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -79,8 +82,13 @@ export async function POST(req: NextRequest) {
               prompt: prompt.trim(),
               editMode: editMode === true,
             });
+            // While the assistant is editing the PDF (including repair rounds), Claude runs Sonnet at low effort.
+            // Everything else keeps the user's chosen model and the default effort.
+            const editingWithClaude = edit.allowed && session.provider === 'claude';
+            const turnModel = editingWithClaude ? EDIT_MODEL : resolvedModel;
             const turnInput = {
-              model: resolvedModel,
+              model: turnModel,
+              ...(editingWithClaude ? { effort: EDIT_EFFORT } : {}),
               folderPath,
               sessionKind: session.sessionKind,
               currentPdfPath: resolvedPdfPath,
@@ -129,7 +137,7 @@ export async function POST(req: NextRequest) {
               role: 'assistant' as const,
               content: finalContent,
               timestamp: new Date().toISOString(),
-              model: resolvedModel,
+              model: turnModel,
               ...(editResult.proposalId ? { proposalId: editResult.proposalId } : {}),
             };
 

@@ -8,7 +8,7 @@ const CODEX_VERSION_FILE = path.join(CODEX_HOME, 'version.json');
 const OPENAI_AUTH_ISSUER = 'https://auth.openai.com';
 const CHATGPT_CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex';
 const CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
-const DEFAULT_CLIENT_VERSION = '0.110.0';
+const DEFAULT_CLIENT_VERSION = '0.164.0';
 const TOKEN_REFRESH_BUFFER_MS = 60_000;
 
 const AUTH_CLAIM_PATH = 'https://api.openai.com/auth';

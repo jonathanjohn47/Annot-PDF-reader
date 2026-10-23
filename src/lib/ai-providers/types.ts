@@ -39,6 +39,8 @@ export interface ProviderTurnEvent {
 export interface ProviderTurnInput {
   providerSessionId?: string;
   model: string;
+  /** Reasoning effort for providers that support it (Claude). Absent means the provider default. */
+  effort?: 'low' | 'medium' | 'high';
   folderPath: string;
   sessionKind: SessionKind;
   prompt: string;

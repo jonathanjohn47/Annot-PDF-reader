@@ -1,16 +1,13 @@
 import { AIProvider } from '@/types';
-import { DEFAULT_AI_PROVIDER, parseAIProvider } from '@/lib/ai-providers/config';
+import { DEFAULT_AI_PROVIDER } from '@/lib/ai-providers/config';
 
 export const AI_PROVIDER_STORAGE_KEY = 'annot-ai-provider';
 export const AI_PROVIDER_EVENT = 'annot-ai-provider-change';
 
 export function readStoredAIProvider(): AIProvider {
-  if (typeof window === 'undefined') {
-    return DEFAULT_AI_PROVIDER;
-  }
-
-  const raw = window.localStorage.getItem(AI_PROVIDER_STORAGE_KEY);
-  return parseAIProvider(raw) ?? DEFAULT_AI_PROVIDER;
+  // The engine is fixed in code (see DEFAULT_AI_PROVIDER); a provider saved in the browser by an older
+  // version is ignored so it cannot override it.
+  return DEFAULT_AI_PROVIDER;
 }
 
 export function writeStoredAIProvider(provider: AIProvider): AIProvider {

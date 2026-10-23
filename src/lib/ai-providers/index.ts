@@ -19,6 +19,8 @@ import {
   ProviderTurnEvent,
 } from './types';
 
+const CODEX_CHAT_MODEL = 'gpt-6-luna';
+
 const codexRuntime: ProviderRuntime = {
   id: 'codex',
   async listModels(): Promise<ProviderModel[]> {
@@ -26,7 +28,9 @@ const codexRuntime: ProviderRuntime = {
     if (!models) {
       throw new Error('Not authenticated. Sign in to Codex on this machine first.');
     }
-    return models;
+    // Only offer the cheapest model; fall back to the full list if it is ever missing.
+    const preferred = models.filter((model) => model.id === CODEX_CHAT_MODEL);
+    return preferred.length > 0 ? preferred : models;
   },
   async getStatus() {
     return {
@@ -58,6 +62,7 @@ const codexRuntime: ProviderRuntime = {
       {
         codexSessionId: input.providerSessionId,
         model: input.model,
+        effort: input.effort,
         folderPath: input.folderPath,
         sessionKind: input.sessionKind,
         prompt: input.prompt,

@@ -34,6 +34,7 @@ interface RunTurnOptions {
 interface RunTurnInput {
   codexSessionId?: string;
   model: string;
+  effort?: 'low' | 'medium' | 'high';
   folderPath: string;
   sessionKind: 'folder' | 'pdf';
   prompt: string;
@@ -62,6 +63,9 @@ interface ParsedEvent {
   };
   message?: string;
 }
+
+// Lower reasoning effort uses less of the ChatGPT plan's usage limit. Raise to 'medium' for deeper answers.
+const DEFAULT_CODEX_EFFORT = 'low';
 
 let resolvedCodexExecutablePromise: Promise<ResolvedCommand> | null = null;
 
@@ -108,7 +112,7 @@ async function resolveCodexExecutable(): Promise<ResolvedCommand> {
 }
 
 function createCodexArgs(input: RunTurnInput): string[] {
-  const baseArgs = ['exec'];
+  const baseArgs = ['exec', '-c', `model_reasoning_effort="${input.effort ?? DEFAULT_CODEX_EFFORT}"`];
 
   if (input.codexSessionId) {
     baseArgs.push('resume', '--json', '--skip-git-repo-check', input.codexSessionId);
