@@ -1,5 +1,6 @@
 'use client';
 
+import { DOCUMENT_ACCEPT } from '@/lib/document-types';
 import { TreeItem } from './TreeItem';
 import { TreePromptDialog } from './TreePromptDialog';
 import { useWorkspace } from '@/lib/workspace-store';
@@ -118,13 +119,13 @@ export function TreeExplorer() {
 
         <div className="px-1 py-3 shrink-0 text-center text-[10px] text-outline leading-tight">
           <div>{stats.folders}F</div>
-          <div>{stats.pdfs}P</div>
+          <div>{stats.pdfs}D</div>
         </div>
 
         <input
           ref={fileInputRef}
           type="file"
-          accept="application/pdf,.pdf"
+          accept={DOCUMENT_ACCEPT}
           className="hidden"
           onChange={(event) => void handleUploadChange(event)}
         />
@@ -161,14 +162,14 @@ export function TreeExplorer() {
             onClick={handleUploadClick}
             disabled={isUploading || treeLoading}
             className="w-6 h-6 rounded flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors disabled:opacity-50"
-            title="Upload PDF"
+            title="Upload a PDF or Word (.docx) file"
           >
             <FilePlus size={13} strokeWidth={2} />
           </button>
           <input
             ref={fileInputRef}
             type="file"
-            accept="application/pdf,.pdf"
+            accept={DOCUMENT_ACCEPT}
             className="hidden"
             onChange={(event) => void handleUploadChange(event)}
           />
@@ -197,7 +198,7 @@ export function TreeExplorer() {
           ))
         ) : (
           <div className="px-3 py-2 text-xs text-on-surface-variant">
-            No folders or PDFs yet.
+            No folders or documents yet.
           </div>
         )}
       </nav>
@@ -205,7 +206,7 @@ export function TreeExplorer() {
       {/* Footer stats */}
       <div className="px-3 py-2 shrink-0">
         <div className="text-[10px] text-outline">
-          {stats.folders} folders &middot; {stats.pdfs} PDFs
+          {stats.folders} folders &middot; {stats.pdfs} files
         </div>
       </div>
 

@@ -2,6 +2,7 @@
 // document context, and turns the model's edit block into a validated proposal (with a bounded repair loop).
 
 import { resolveFolderPath } from '@/lib/annot-sessions';
+import { isPdfPath } from '@/lib/document-types';
 import { getPythonCommand } from '@/lib/python-runtime';
 import type { ProviderRuntime, ProviderTurnEvent, ProviderTurnInput } from '@/lib/ai-providers/types';
 import type { AIProvider } from '@/types';
@@ -40,6 +41,7 @@ export async function buildEditContext(input: {
   editMode: boolean;
 }): Promise<EditContextResult> {
   if (!input.pdfPath) return { allowed: false, reason: 'no PDF is open', prompt: { allowed: false }, pdfAbs: null };
+  if (!isPdfPath(input.pdfPath)) return { allowed: false, reason: 'editing is only available for PDF files', prompt: { allowed: false }, pdfAbs: null };
   if (input.provider === 'ollama') {
     return { allowed: false, reason: 'local Ollama models cannot read the PDF tools needed for editing', prompt: { allowed: false }, pdfAbs: null };
   }
@@ -141,6 +143,7 @@ export async function processEditReply(input: ProcessEditInput): Promise<Process
         providerSessionId: sessionId,
         selectedText: null,
         screenshotPaths: [],
+        attachmentPaths: [],
         prompt: repairPrompt(stored),
       },
       { onEvent: input.onEvent },

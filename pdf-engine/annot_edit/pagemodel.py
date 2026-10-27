@@ -82,13 +82,14 @@ def _is_serif(font: str, flags: int) -> bool:
 
 
 def _extract_blocks(page: fitz.Page) -> Tuple[List[TextBlock], List[fitz.Rect]]:
-    data = page.get_text("dict")
+    # Without TEXT_PRESERVE_IMAGES: decoding every image block is very slow on pages that carry many clipped copies
+    # of one picture (left behind by earlier edits), and only the rectangles are needed.
+    data = page.get_text("dict", flags=fitz.TEXTFLAGS_DICT & ~fitz.TEXT_PRESERVE_IMAGES)
     blocks: List[TextBlock] = []
-    image_rects: List[fitz.Rect] = []
+    image_rects: List[fitz.Rect] = [fitz.Rect(info["bbox"]) for info in page.get_image_info()]
     for raw in data.get("blocks", []):
         rect = fitz.Rect(raw["bbox"])
         if raw.get("type") == 1:
-            image_rects.append(rect)
             continue
         lines = raw.get("lines", [])
         chars = 0
@@ -145,6 +146,8 @@ def _drawing_rects(page: fitz.Page) -> List[fitz.Rect]:
             continue
         if r.width * r.height > 0.85 * page_area:
             continue  # page background
+        if r.x0 < page.rect.x0 - 2 or r.y0 < page.rect.y0 - 2 or r.x1 > page.rect.x1 + 2 or r.y1 > page.rect.y1 + 2:
+            continue  # clipped off the page (e.g. overflow left behind by an earlier diagram): invisible, not content
         if r.height < 0.5:
             r.y1 = r.y0 + 0.5
         if r.width < 0.5:
@@ -168,6 +171,36 @@ def _merge_bands(items: List[Tuple[fitz.Rect, str, Optional[int]]]) -> List[Band
             bands.append(Band(rect.y0, rect.y1, rect.x0, rect.x1, {kind},
                               [block_index] if block_index is not None else []))
     return bands
+
+
+def _visible_bands(page: fitz.Page, bands: List[Band]) -> List[Band]:
+    """Shrink bands that hold drawings or pictures to the ink that is actually visible, and drop the ones with none.
+
+    Earlier edits leave ghosts behind: vector items and pictures of a moved page slice that are clipped away, so the
+    reader sees nothing but the object lists still have them. Left in, they make a block look hundreds of points
+    taller than it is and hide the free space under it."""
+    if not any(b.kinds & {"draw", "image"} for b in bands):
+        return bands
+    pix = page.get_pixmap(dpi=72, colorspace=fitz.csGRAY, annots=False)
+    scale = pix.width / page.rect.width
+    stride, samples = pix.width, pix.samples
+    keep: List[Band] = []
+    for band in bands:
+        if not band.kinds & {"draw", "image"}:
+            keep.append(band)
+            continue
+        x0, x1 = max(0, int(band.x0 * scale) - 1), min(stride, int(band.x1 * scale) + 2)
+        y0, y1 = max(0, int(band.y0 * scale) - 1), min(pix.height, int(band.y1 * scale) + 2)
+        inked = [y for y in range(y0, y1) if x1 > x0 and min(samples[y * stride + x0:y * stride + x1]) <= 250]
+        if not inked:
+            if band.kinds <= {"draw", "image"}:
+                continue  # nothing visible at all
+            keep.append(band)
+            continue
+        band.y0 = max(band.y0, inked[0] / scale - 0.5)
+        band.y1 = min(band.y1, (inked[-1] + 1) / scale + 0.5)
+        keep.append(band)
+    return keep
 
 
 def _detect_columns(blocks: List[TextBlock], width: float) -> int:
@@ -220,7 +253,7 @@ def analyze_page(page: fitz.Page) -> PageProfile:
         if r.y0 > 0.90 * height and has_footer:
             continue
         items.append((r, "draw", None))
-    bands = _merge_bands(items)
+    bands = _visible_bands(page, _merge_bands(items))
 
     body_candidates = [b for b in blocks if b.zone == "body" and abs(b.size - body_size) <= 0.5 and len(b.text.strip()) >= 60]
     if body_candidates:

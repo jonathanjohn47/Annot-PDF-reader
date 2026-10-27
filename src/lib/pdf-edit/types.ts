@@ -37,7 +37,9 @@ export type Block =
   | { type: 'equation'; text: string }
   | { type: 'callout'; tone: 'definition' | 'note' | 'example' | 'caution' | 'see_also'; title?: string; text: string }
   | { type: 'table'; header: string[]; rows: string[][]; caption?: string }
-  | { type: 'diagram'; spec: DiagramSpec; caption: string };
+  | { type: 'diagram'; spec: DiagramSpec; caption: string }
+  /** A picture the user attached in chat; `path` is its workspace-relative attachment path. */
+  | { type: 'image'; path: string; caption: string };
 
 export interface Placement {
   page: number;
@@ -80,13 +82,34 @@ export interface MoveSectionOp {
   from: { page: number; start_quote: string; end_quote?: string };
   to: Placement;
 }
+export interface DeleteSectionOp {
+  type: 'delete_section';
+  from: { page: number; start_quote: string; end_quote?: string };
+}
+/** Fill the empty bottom of `page` with the blocks that start the next page; the next page closes up. */
+export interface PullUpOp {
+  type: 'pull_up';
+  page: number;
+}
+/** Rewrite the printed page numbers (header/footer) so they match the page positions again. */
+export interface RenumberPagesOp {
+  type: 'renumber_pages';
+}
+/** Remove invisible duplicate content that earlier edits left inside pages; nothing visible changes. */
+export interface CleanFileOp {
+  type: 'clean_file';
+}
 export type EditOp =
   | InsertContentOp
   | ReplacePassageOp
   | DeletePassageOp
   | DeletePagesOp
   | MovePagesOp
-  | MoveSectionOp;
+  | MoveSectionOp
+  | DeleteSectionOp
+  | PullUpOp
+  | RenumberPagesOp
+  | CleanFileOp;
 
 export interface SourceRef {
   page: number;

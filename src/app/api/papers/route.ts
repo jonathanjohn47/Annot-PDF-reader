@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { isDocumentFileName } from '@/lib/document-types';
 import {
   deleteWorkspacePdf,
   moveWorkspacePdf,
@@ -23,8 +24,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      return NextResponse.json({ error: 'Only PDF files are supported' }, { status: 400 });
+    if (!isDocumentFileName(file.name)) {
+      return NextResponse.json({ error: 'Only PDF and Word (.docx) files are supported' }, { status: 400 });
     }
 
     const uploadedPdf = await saveUploadedPdf(folderPath, file);

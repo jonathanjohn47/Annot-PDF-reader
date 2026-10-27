@@ -1,6 +1,7 @@
 // ── Tree Structure ──────────────────────────────────────────────
 
-export type TreeNodeType = 'folder' | 'pdf';
+// 'pdf' and 'docx' are both openable documents (see lib/document-types.ts).
+export type TreeNodeType = 'folder' | 'pdf' | 'docx';
 
 export interface TreeNode {
   id: string;
@@ -12,6 +13,7 @@ export interface TreeNode {
 
 // ── Sessions ────────────────────────────────────────────────────
 
+// A 'pdf' session is a session about one document; it is a Word file when pdfPath ends in .docx (kept for stored sessions).
 export type SessionKind = 'folder' | 'pdf';
 export type AIProvider = 'codex' | 'claude' | 'ollama';
 
@@ -83,4 +85,21 @@ export interface PdfNote {
   content: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// ── Word highlights ─────────────────────────────────────────────
+
+/** A highlight in a Word document, anchored by text (character offsets plus quoted context), not by page position. */
+export interface DocxHighlight {
+  id: string;
+  type: 'important' | 'unknown';
+  text: string;
+  note?: string;
+  /** Character offsets in the document's readable text (see lib/docx-annotations.ts). */
+  start: number;
+  end: number;
+  /** Text just before and after, used to find the passage again if the offsets no longer match. */
+  prefix: string;
+  suffix: string;
+  createdAt: string;
 }

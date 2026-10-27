@@ -1,7 +1,7 @@
 import { TreeNode } from '@/types';
 
 export function collectPdfs(node: TreeNode): TreeNode[] {
-  if (node.type === 'pdf') return [node];
+  if (node.type !== 'folder') return [node];
 
   const pdfs: TreeNode[] = [];
   for (const child of node.children ?? []) {

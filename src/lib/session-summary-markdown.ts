@@ -13,7 +13,7 @@ function escapeMarkdownBlock(value: string): string {
 export function buildSessionSummaryMarkdown(session: Session): string {
   const title = session.title || 'Session';
   const sourceLabel = session.pdfPath
-    ? `Source PDF: \`${session.pdfPath}\``
+    ? `Source document: \`${session.pdfPath}\``
     : `Source Folder: \`${session.folderPath || '.'}\``;
   const summaries = session.turnSummaries ?? [];
 
@@ -48,7 +48,7 @@ export function buildSessionSummaryMarkdown(session: Session): string {
 
 export function getSessionSummaryMarkdownFileName(session: Session): string {
   const baseName = session.pdfPath
-    ? path.basename(session.pdfPath).replace(/\.pdf$/i, '')
+    ? path.basename(session.pdfPath).replace(/\.(pdf|docx)$/i, '')
     : (session.title || 'session');
 
   return `${baseName}.summary.md`;

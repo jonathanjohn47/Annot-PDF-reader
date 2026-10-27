@@ -34,7 +34,11 @@ interface OllamaRunTurnInput {
   prompt: string;
   currentPdfPath?: string | null;
   selectedText?: string | null;
+  currentPage?: number | null;
+  documentTextPath?: string | null;
+  currentLocation?: string | null;
   screenshotPaths?: string[];
+  attachmentPaths?: string[];
   edit?: EditPromptContext;
 }
 
@@ -54,7 +58,7 @@ function buildPrompt(
 ): string {
   return buildAnnotPrompt(
     { ...input, isFollowUp },
-    'Local Ollama models used here are text-only and cannot view images — tell the user you cannot see the screenshots and ask them to paste the relevant text instead.',
+    'Local Ollama models used here are text-only and cannot view images or open attached files — tell the user you cannot see the screenshots or attachments and ask them to paste the relevant text instead.',
   );
 }
 

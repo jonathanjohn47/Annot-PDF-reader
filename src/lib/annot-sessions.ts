@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 
 import { DEFAULT_AI_PROVIDER } from '@/lib/ai-providers/config';
+import { isDocumentFileName } from '@/lib/document-types';
 import { AIProvider, ChatMessage, Session, SessionKind, SessionTurnSummary } from '@/types';
 
 const WORKSPACE_ROOT = process.env.ANNOT_ROOT || path.join(os.homedir(), 'Annot');
@@ -119,7 +120,7 @@ async function collectPdfPaths(folderPath: string): Promise<string[]> {
       continue;
     }
 
-    if (entry.isFile() && entry.name.toLowerCase().endsWith('.pdf')) {
+    if (entry.isFile() && isDocumentFileName(entry.name)) {
       pdfPaths.push(relativePath);
     }
   }
@@ -130,12 +131,12 @@ async function collectPdfPaths(folderPath: string): Promise<string[]> {
 async function inferPdfPathFromSession(folderPath: string, session: StoredSession): Promise<string | null> {
   const titleStem = session.title.replace(/\s+session$/i, '').trim().toLowerCase();
   const pdfNameStem = session.pdfPath
-    ? path.basename(session.pdfPath).replace(/\.pdf$/i, '').trim().toLowerCase()
+    ? path.basename(session.pdfPath).replace(/\.(pdf|docx)$/i, '').trim().toLowerCase()
     : '';
 
   const pdfPaths = await collectPdfPaths(folderPath);
   const matches = pdfPaths.filter((candidatePath) => {
-    const candidateStem = path.basename(candidatePath).replace(/\.pdf$/i, '').trim().toLowerCase();
+    const candidateStem = path.basename(candidatePath).replace(/\.(pdf|docx)$/i, '').trim().toLowerCase();
     return candidateStem === titleStem || (pdfNameStem.length > 0 && candidateStem === pdfNameStem);
   });
 
@@ -400,7 +401,7 @@ export function buildSessionTitle(
   pdfPath?: string | null,
 ): string {
   if (sessionKind === 'pdf' && pdfPath) {
-    return `${path.basename(pdfPath).replace(/\.pdf$/i, '')} session`;
+    return `${path.basename(pdfPath).replace(/\.(pdf|docx)$/i, '')} session`;
   }
 
   const folderName = folderPath.split('/').filter(Boolean).at(-1) || 'Workspace';

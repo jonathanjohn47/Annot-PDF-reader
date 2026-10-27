@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { FilePenLine, Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown, Plus, Copy, Check, MessageCircleQuestion } from 'lucide-react';
+import { Send, BookOpen, Link2, Sparkles, Loader2, ChevronDown, X, CheckCircle2, AlertCircle, FileDown, Plus, Copy, Check, MessageCircleQuestion, Paperclip, FileText } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { CodeBlockPre } from '@/components/common/CodeBlockPre';
 import remarkGfm from 'remark-gfm';
@@ -14,7 +14,9 @@ import { AskQuestionDialog } from '@/components/workspace/AskQuestionDialog';
 import { EditProposalCard } from '@/components/workspace/EditProposalCard';
 import { readAutoApplySmall, readEditMode, writeAutoApplySmall, writeEditMode } from '@/lib/pdf-edit/edit-preferences';
 import { buildSessionSummaryMarkdown, getSessionSummaryMarkdownFileName } from '@/lib/session-summary-markdown';
-import { useWorkspace } from '@/lib/workspace-store';
+import { useWorkspace, viewerLocation, viewerPage } from '@/lib/workspace-store';
+import { isDocxPath, isPdfPath, stripDocumentExtension } from '@/lib/document-types';
+import { MAX_ATTACHMENTS } from '@/lib/screenshot-limits';
 import { normalizeMathMarkdown } from '@/lib/markdown-math';
 import { AI_PROVIDER_EVENT, readStoredAIProvider } from '@/lib/provider-preferences';
 import { AIProvider, ChatMessage, Session, SessionKind, SessionTurnSummary } from '@/types';
@@ -25,6 +27,14 @@ import {
 } from '@/lib/chat-preferences';
 
 const MAX_INPUT_HEIGHT = 180;
+const ATTACHMENT_ACCEPT = 'image/*,.pdf,.txt,.md,.csv,.json,.tex,.py,.js,.ts,.html';
+
+interface ChatAttachment {
+  path: string;
+  name: string;
+  /** Object URL for image thumbnails; absent for other files. */
+  previewUrl?: string;
+}
 
 interface AvailableModel {
   id: string;
@@ -63,6 +73,8 @@ interface FinalEvent {
   model?: string;
   provider?: AIProvider;
   session?: Session;
+  /** Page of the open PDF the assistant took the reader to ("take me there"). */
+  gotoPage?: number;
 }
 
 interface ErrorEvent {
@@ -123,6 +135,7 @@ export function ChatPanel() {
     removeScreenshot,
     clearScreenshots,
     notifyPdfEdited,
+    goToPdfPage,
   } = useWorkspace();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -147,13 +160,20 @@ export function ChatPanel() {
   const [askWholeMessage, setAskWholeMessage] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(readEditMode);
   const [autoApplySmall, setAutoApplySmall] = useState(readAutoApplySmall);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [attachmentsUploading, setAttachmentsUploading] = useState(false);
+  const [attachmentError, setAttachmentError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const skipSessionHydrationRef = useRef<string | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
   const sessionUiMapRef = useRef<Record<string, SessionUiState>>({});
 
-  const sessionLabel = activeSessionKind === 'pdf' ? 'PDF Session' : 'Folder Session';
+  const sessionDocumentPath = activeSessionPdfPath || activePdf?.path || null;
+  const sessionLabel = activeSessionKind === 'pdf'
+    ? (isDocxPath(sessionDocumentPath) ? 'Document Session' : 'PDF Session')
+    : 'Folder Session';
   const exportSession = useMemo<Session>(() => ({
     id: activeSessionId || 'preview-session',
     folderPath: activeSessionFolder || '',
@@ -162,7 +182,7 @@ export function ChatPanel() {
     provider: selectedProvider,
     title: sessionTitle || (
       activeSessionKind === 'pdf'
-        ? `${(activePdf?.name || activeSessionPdfPath?.split('/').at(-1) || 'PDF').replace(/\.pdf$/i, '')} session`
+        ? `${stripDocumentExtension(activePdf?.name || activeSessionPdfPath?.split('/').at(-1) || 'Document')} session`
         : `${activeSessionFolder?.split('/').filter(Boolean).at(-1) || 'Workspace'} session`
     ),
     createdAt: '',
@@ -505,9 +525,9 @@ export function ChatPanel() {
       return latestSession.id;
     }
 
-    const pdfSessionName = (activePdf?.name
+    const pdfSessionName = stripDocumentExtension(activePdf?.name
       || activeSessionPdfPath?.split('/').at(-1)
-      || 'PDF').replace(/\.pdf$/i, '');
+      || 'Document');
     const fallbackTitle = activeSessionKind === 'pdf' && activeSessionPdfPath
       ? `${pdfSessionName} session`
       : `${activeSessionFolder.split('/').filter(Boolean).at(-1) || 'Workspace'} session`;
@@ -539,9 +559,9 @@ export function ChatPanel() {
   const handleNewChat = async () => {
     if (!activeSessionFolder || !activeSessionKind || isLoading || newChatLoading) return;
 
-    const pdfSessionName = (activePdf?.name
+    const pdfSessionName = stripDocumentExtension(activePdf?.name
       || activeSessionPdfPath?.split('/').at(-1)
-      || 'PDF').replace(/\.pdf$/i, '');
+      || 'Document');
     const fallbackTitle = activeSessionKind === 'pdf' && activeSessionPdfPath
       ? `${pdfSessionName} session`
       : `${activeSessionFolder.split('/').filter(Boolean).at(-1) || 'Workspace'} session`;
@@ -582,6 +602,7 @@ export function ChatPanel() {
       setSelectedProvider((data.provider as AIProvider) || providerForNewChat);
       setSelectedText(null);
       clearScreenshots();
+      clearAttachments();
       commitSessionUiState(newSessionId, (current) => ({
         ...current,
         provider: (data.provider as AIProvider) || providerForNewChat,
@@ -737,6 +758,12 @@ export function ChatPanel() {
       const proposalId = sessionMessages[sessionMessages.length - 1]?.proposalId;
       if (proposalId) void notifyIfApplied(proposalId);
 
+      // "Take me there": only when the PDF the chat is about is the one on screen.
+      const sessionPdfPath = activeSessionKind === 'pdf' ? (activeSessionPdfPath || activePdf?.path) : activePdf?.path;
+      if (event.gotoPage && activePdf && sessionPdfPath === activePdf.path && isPdfPath(activePdf.path)) {
+        goToPdfPage(event.gotoPage);
+      }
+
       commitSessionUiState(sessionId, (current) => ({
         ...current,
         messages: sessionMessages,
@@ -774,8 +801,62 @@ export function ChatPanel() {
     }
   };
 
+  const clearAttachments = useCallback(() => {
+    setAttachments((current) => {
+      current.forEach((item) => item.previewUrl && URL.revokeObjectURL(item.previewUrl));
+      return [];
+    });
+  }, []);
+
+  const removeAttachment = (path: string) => {
+    setAttachments((current) => {
+      current.filter((item) => item.path === path).forEach((item) => item.previewUrl && URL.revokeObjectURL(item.previewUrl));
+      return current.filter((item) => item.path !== path);
+    });
+  };
+
+  const uploadFiles = async (files: File[]) => {
+    if (files.length === 0 || !activeSessionFolder) return;
+
+    const room = MAX_ATTACHMENTS - attachments.length;
+    setAttachmentError(files.length > room ? `Only ${MAX_ATTACHMENTS} attachments per message.` : '');
+    setAttachmentsUploading(true);
+    try {
+      for (const file of files.slice(0, Math.max(room, 0))) {
+        const form = new FormData();
+        form.append('folderPath', activeSessionFolder);
+        form.append('file', file);
+        const res = await fetch('/api/workspace/attachment', { method: 'POST', body: form });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || typeof data?.path !== 'string') {
+          setAttachmentError(typeof data?.error === 'string' ? data.error : `Could not attach ${file.name}.`);
+          continue;
+        }
+        const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined;
+        setAttachments((current) => [...current, { path: data.path, name: file.name, previewUrl }]);
+      }
+    } finally {
+      setAttachmentsUploading(false);
+    }
+  };
+
+  const handleFilesPicked = (fileList: FileList | null) => {
+    const files = Array.from(fileList ?? []);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    void uploadFiles(files);
+  };
+
+  // Ctrl/Cmd+V with an image on the clipboard attaches it; plain text pastes as usual.
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (e.clipboardData.getData('text/plain')) return;
+    const images = Array.from(e.clipboardData.files).filter((file) => file.type.startsWith('image/'));
+    if (images.length === 0) return;
+    e.preventDefault();
+    void uploadFiles(images);
+  };
+
   const handleSend = async () => {
-    if (!input.trim() || isLoading || !activeSessionFolder || !activeSessionKind) return;
+    if (!input.trim() || isLoading || attachmentsUploading || !activeSessionFolder || !activeSessionKind) return;
     const prompt = input.trim();
     setInput('');
     let targetSessionId: string | null = null;
@@ -786,6 +867,10 @@ export function ChatPanel() {
       content: prompt,
       timestamp: new Date().toISOString(),
     };
+
+    const chatPdfPath = activeSessionKind === 'pdf'
+      ? (activeSessionPdfPath || activePdf?.path || null)
+      : (activePdf?.path || null);
 
     try {
       const sessionId = await ensureSessionId();
@@ -812,18 +897,21 @@ export function ChatPanel() {
           sessionId,
           prompt: userMessage.content,
             model: selectedModel,
-            currentPdfPath: activeSessionKind === 'pdf'
-              ? (activeSessionPdfPath || activePdf?.path || null)
-            : (activePdf?.path || null),
+            currentPdfPath: chatPdfPath,
+            // Only meaningful when the chat is about the PDF that is open in the viewer.
+            currentPage: activePdf && chatPdfPath === activePdf.path ? viewerPage.current : null,
             selectedText: selectedText || null,
             screenshotPaths: screenshots.map((item) => item.path),
-            editMode,
+            attachmentPaths: attachments.map((item) => item.path),
+            currentLocation: isDocxPath(chatPdfPath) ? (viewerLocation.current?.() ?? null) : null,
+            editMode: editMode && isPdfPath(chatPdfPath),
             autoApplyNarrow: autoApplySmall,
         }),
       });
 
       setSelectedText(null);
       clearScreenshots();
+      clearAttachments();
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -1104,7 +1192,7 @@ export function ChatPanel() {
         {!activeSessionId && !sessionLoading && (
           <div className="rounded-xl bg-surface-container px-3 py-2 text-xs text-on-surface-variant">
             {activeSessionKind === 'pdf'
-              ? 'Your first message here will start or reopen a session for this PDF.'
+              ? `Your first message here will start or reopen a session for this ${isDocxPath(sessionDocumentPath) ? 'document' : 'PDF'}.`
               : 'Your first message here will start or reopen a research session for this folder.'}
           </div>
         )}
@@ -1380,38 +1468,90 @@ export function ChatPanel() {
             </div>
           </div>
         )}
-        {(activePdf || activeSessionPdfPath) && (
-          <div className="mb-1.5 flex items-center gap-3 text-[10px] text-on-surface-variant">
+        {(attachments.length > 0 || attachmentsUploading || attachmentError) && (
+          <div className="mb-2 px-3 py-2 rounded-lg bg-surface-container-low border border-outline-variant/20">
+            <div className="flex flex-wrap items-center gap-2">
+              {attachments.map((item) => (
+                <div
+                  key={item.path}
+                  className="relative flex items-center gap-1.5 rounded-md border border-outline-variant/30 bg-surface-container px-1.5 py-1 text-[11px] text-on-surface"
+                >
+                  {item.previewUrl ? (
+                    <img src={item.previewUrl} alt={item.name} className="h-8 w-8 rounded object-cover" />
+                  ) : (
+                    <FileText size={14} strokeWidth={2} className="text-on-surface-variant" />
+                  )}
+                  <span className="max-w-[120px] truncate">{item.name}</span>
+                  <button
+                    onClick={() => removeAttachment(item.path)}
+                    className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-on-surface-variant hover:text-on-surface"
+                    aria-label={`Remove ${item.name}`}
+                  >
+                    <X size={10} strokeWidth={2.5} />
+                  </button>
+                </div>
+              ))}
+              {attachmentsUploading && (
+                <span className="inline-flex items-center gap-1 text-[11px] text-on-surface-variant">
+                  <Loader2 size={11} className="animate-spin" /> Uploading...
+                </span>
+              )}
+            </div>
+            {attachmentError && <div className="mt-1 text-[11px] text-error">{attachmentError}</div>}
+          </div>
+        )}
+        {isPdfPath(sessionDocumentPath) && (
+          <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-on-surface-variant">
             <button
               type="button"
               onClick={() => { const next = !editMode; setEditMode(next); writeEditMode(next); }}
               aria-pressed={editMode}
               title="When on, the assistant may propose changes to the PDF itself. You always see a preview first (small additions can be applied directly if you choose)."
-              className={`inline-flex items-center gap-1 rounded-full px-2 py-1 font-medium transition-colors ${
-                editMode ? 'bg-on-surface text-surface-container-lowest' : 'bg-surface-container hover:bg-surface-container-high'
+              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 font-medium transition-colors ${
+                editMode
+                  ? 'bg-surface-container-high text-on-surface'
+                  : 'bg-surface-container hover:bg-surface-container-high'
               }`}
             >
-              <FilePenLine size={10} strokeWidth={2} />
-              {editMode ? 'PDF edit mode: on' : 'PDF edit mode: off'}
+              <span className={`h-1.5 w-1.5 rounded-full ${editMode ? 'bg-emerald-500' : 'bg-outline-variant'}`} />
+              {editMode ? 'Edit mode on' : 'Edit mode off'}
             </button>
             {editMode && (
-              <label className="inline-flex cursor-pointer items-center gap-1">
+              <label className="inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap">
                 <input
                   type="checkbox"
                   checked={autoApplySmall}
                   onChange={(e) => { setAutoApplySmall(e.target.checked); writeAutoApplySmall(e.target.checked); }}
                 />
-                Apply small additions without preview
+                Auto-apply small additions
               </label>
             )}
-            {!editMode && <span>Questions never change the PDF.</span>}
           </div>
         )}
         <div className="flex items-end gap-2 bg-surface-container-low rounded-xl px-3 py-2.5">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={ATTACHMENT_ACCEPT}
+            className="hidden"
+            onChange={(e) => handleFilesPicked(e.target.files)}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={!activeSessionFolder || attachmentsUploading || attachments.length >= MAX_ATTACHMENTS}
+            title="Attach files or images"
+            aria-label="Attach files or images"
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors disabled:opacity-50 shrink-0"
+          >
+            <Paperclip size={14} strokeWidth={2} />
+          </button>
           <textarea
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onPaste={handlePaste}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
             }}
@@ -1422,7 +1562,7 @@ export function ChatPanel() {
           />
           <button
             onClick={handleSend}
-            disabled={isLoading || !selectedModel || !activeSessionFolder || !activeSessionKind}
+            disabled={isLoading || attachmentsUploading || !selectedModel || !activeSessionFolder || !activeSessionKind}
             className="w-7 h-7 rounded-lg bg-primary text-on-primary flex items-center justify-center hover:opacity-90 transition-opacity disabled:opacity-50 shrink-0"
           >
             <Send size={13} strokeWidth={2} />

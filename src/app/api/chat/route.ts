@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { appendMessage, getSession, updateSession } from '@/lib/annot-sessions';
 import { getProviderRuntime } from '@/lib/ai-providers';
 import { createPdfNote } from '@/lib/pdf-notes';
-import { MAX_SCREENSHOTS } from '@/lib/screenshot-limits';
+import { MAX_ATTACHMENTS, MAX_SCREENSHOTS } from '@/lib/screenshot-limits';
 import { appendNoteSavedConfirmation, extractNoteDirective } from '@/lib/note-directive';
+import { extractGotoDirective } from '@/lib/goto-directive';
 import { buildEditContext, processEditReply } from '@/lib/pdf-edit/chat-integration';
+import { cleanLocation, documentTextPathFor } from '@/lib/document-context';
 
 const EDIT_MODEL = 'sonnet';
 const EDIT_EFFORT = 'low' as const;
@@ -19,7 +21,10 @@ export async function POST(req: NextRequest) {
       model,
       currentPdfPath,
       selectedText,
+      currentPage,
+      currentLocation,
       screenshotPaths,
+      attachmentPaths,
       editMode,
       autoApplyNarrow,
     } = body as {
@@ -29,7 +34,10 @@ export async function POST(req: NextRequest) {
       model?: string;
       currentPdfPath?: string | null;
       selectedText?: string | null;
+      currentPage?: number | null;
+      currentLocation?: string | null;
       screenshotPaths?: string[] | null;
+      attachmentPaths?: string[] | null;
       editMode?: boolean;
       autoApplyNarrow?: boolean;
     };
@@ -86,6 +94,7 @@ export async function POST(req: NextRequest) {
             // Everything else keeps the user's chosen model and the default effort.
             const editingWithClaude = edit.allowed && session.provider === 'claude';
             const turnModel = editingWithClaude ? EDIT_MODEL : resolvedModel;
+            const documentTextPath = await documentTextPathFor(resolvedPdfPath);
             const turnInput = {
               model: turnModel,
               ...(editingWithClaude ? { effort: EDIT_EFFORT } : {}),
@@ -93,8 +102,14 @@ export async function POST(req: NextRequest) {
               sessionKind: session.sessionKind,
               currentPdfPath: resolvedPdfPath,
               selectedText: selectedText ?? null,
+              currentPage: Number.isInteger(currentPage) && Number(currentPage) >= 1 ? Number(currentPage) : null,
+              documentTextPath,
+              currentLocation: documentTextPath ? cleanLocation(currentLocation) : null,
               screenshotPaths: Array.isArray(screenshotPaths)
                 ? screenshotPaths.filter((item) => typeof item === 'string' && item.trim()).slice(0, MAX_SCREENSHOTS)
+                : [],
+              attachmentPaths: Array.isArray(attachmentPaths)
+                ? attachmentPaths.filter((item) => typeof item === 'string' && item.trim()).slice(0, MAX_ATTACHMENTS)
                 : [],
               edit: edit.prompt,
             };
@@ -124,7 +139,8 @@ export async function POST(req: NextRequest) {
               })
               : { content: turn.content, providerSessionId: turn.providerSessionId, proposalId: undefined };
 
-            const { cleanedContent, note } = extractNoteDirective(editResult.content);
+            const { cleanedContent: withoutGoto, page: gotoPage } = extractGotoDirective(editResult.content);
+            const { cleanedContent, note } = extractNoteDirective(withoutGoto);
             let finalContent = cleanedContent;
 
             if (note && resolvedPdfPath) {
@@ -156,6 +172,7 @@ export async function POST(req: NextRequest) {
             writeEvent({
               type: 'final',
               content: assistantMessage.content,
+              ...(gotoPage ? { gotoPage } : {}),
               model: assistantMessage.model,
               provider: session.provider,
               session: messageSavedSession,

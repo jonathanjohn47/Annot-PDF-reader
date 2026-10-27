@@ -16,6 +16,7 @@ function describeBlock(block: Block): string {
     case 'callout': return `a ${block.tone.replace('_', ' ')} box`;
     case 'table': return 'a table';
     case 'diagram': return `a ${block.spec.kind} diagram (${block.spec.nodes.length} nodes)`;
+    case 'image': return 'your attached image';
   }
 }
 
@@ -40,6 +41,14 @@ export function describeOp(op: EditOp): string {
       return `Delete page${op.pages.length > 1 ? 's' : ''} ${op.pages.join(', ')}.`;
     case 'move_pages':
       return `Move page${op.pages.length > 1 ? 's' : ''} ${op.pages.join(', ')} ${op.after_page === 0 ? 'to the start' : `to after page ${op.after_page}`}.`;
+    case 'delete_section':
+      return `Remove everything from ${quoteShort(op.from.start_quote)}${op.from.end_quote ? ` to ${quoteShort(op.from.end_quote)}` : ''} (a figure, diagram or block) on page ${op.from.page}.`;
+    case 'clean_file':
+      return 'Clean up the file: remove hidden duplicate copies that earlier edits left inside pages (nothing visible changes; the pages open faster).';
+    case 'renumber_pages':
+      return 'Renumber the printed page numbers so every page shows its own position.';
+    case 'pull_up':
+      return `Move the content that starts the next page up into the empty space at the bottom of page ${op.page} (the next page is removed if nothing else is left on it).`;
     case 'move_section':
       return `Move the section starting ${quoteShort(op.from.start_quote)} (page ${op.from.page}) ${describePlacement(op.to)}.`;
   }

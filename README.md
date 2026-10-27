@@ -45,6 +45,7 @@ Annot uses your existing local Codex or Claude Code login on the same machine. N
 - Per-PDF markdown export for yellow/red highlights with preview before download
 - Session-level markdown export for LLM-generated chat summaries with preview before download
 - Adjustable chat font size and resizable chat panel
+- Word (`.docx`) files open next to PDFs: comfortable reading view, yellow/red highlights with memos, notes, read-aloud, Markdown export, and chat that knows the passage you are looking at, and hand editing (type in the page, paste or insert pictures, Save writes only the changed paragraphs back into the .docx and keeps the previous version for Undo save). The chat assistant does not edit Word files
 
 ## Requirements
 
@@ -56,6 +57,7 @@ Before you start, make sure you have:
 - Codex installed locally if you want to use Codex
 - Claude Code installed locally if you want to use Claude Code
 - `PyMuPDF` installed for reading and writing PDF annotations
+- `pandoc` installed if you want to open Word (`.docx`) files (`brew install pandoc`); set `PANDOC_BIN` if it is not on your PATH
 - `poppler` installed if you want reliable PDF page rendering utilities outside the browser viewer
 
 Annot reuses your local CLI authentication state. Sign in through the provider you want to use before opening the app.

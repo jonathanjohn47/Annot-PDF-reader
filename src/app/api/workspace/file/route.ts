@@ -4,6 +4,7 @@ import path from 'path';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { resolveFolderPath } from '@/lib/annot-sessions';
+import { isDocxPath } from '@/lib/document-types';
 
 export async function GET(req: NextRequest) {
   try {
@@ -25,7 +26,9 @@ export async function GET(req: NextRequest) {
 
     return new NextResponse(fileBuffer, {
       headers: {
-        'Content-Type': 'application/pdf',
+        'Content-Type': isDocxPath(fileName)
+          ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          : 'application/pdf',
         'Content-Length': String(stat.size),
         'Content-Disposition': `inline; filename="${encodeURIComponent(fileName)}"`,
         'Cache-Control': 'no-store',

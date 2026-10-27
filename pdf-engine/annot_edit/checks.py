@@ -199,7 +199,7 @@ def run_checks(doc: fitz.Document, proposal: Dict[str, Any]) -> Tuple[List[Dict[
     ops: List[Dict[str, Any]] = proposal["ops"]
     text = DocText(doc)
     points = insertion_points(doc, ops)
-    destructive = any(op["type"] in ("replace_passage", "delete_passage", "delete_pages", "move_section", "move_pages") for op in ops)
+    destructive = any(op["type"] in ("replace_passage", "delete_passage", "delete_pages", "move_section", "move_pages", "delete_section", "pull_up", "renumber_pages", "clean_file") for op in ops)
     additive = [op for op in ops if op["type"] == "insert_content"]
 
     # ── page ranges

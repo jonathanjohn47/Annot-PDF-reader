@@ -40,7 +40,11 @@ interface RunTurnInput {
   prompt: string;
   currentPdfPath?: string | null;
   selectedText?: string | null;
+  currentPage?: number | null;
+  documentTextPath?: string | null;
+  currentLocation?: string | null;
   screenshotPaths?: string[];
+  attachmentPaths?: string[];
   edit?: EditPromptContext;
 }
 
@@ -72,7 +76,7 @@ let resolvedCodexExecutablePromise: Promise<ResolvedCommand> | null = null;
 function buildPrompt(input: Omit<RunTurnInput, 'model'>): string {
   return buildAnnotPrompt(
     { ...input, isFollowUp: Boolean(input.codexSessionId) },
-    'View every image listed above before answering, and treat them as the primary focus of their request unless the request clearly says otherwise.',
+    'View every image and read every file listed above before answering, and treat them as the primary focus of their request unless the request clearly says otherwise.',
   );
 }
 

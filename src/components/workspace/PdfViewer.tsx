@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useWorkspace } from '@/lib/workspace-store';
+import { useWorkspace, viewerPage } from '@/lib/workspace-store';
 import { MAX_SCREENSHOTS } from '@/lib/screenshot-limits';
 import { Highlight } from '@/types';
 import { getHighlightRects, mergeHighlights, normalizeHighlightRects, type HighlightRect } from '@/lib/highlight-utils';
@@ -32,10 +32,14 @@ import {
   Play,
   Square,
   History,
+  FoldVertical,
+  Hash,
+  Sparkles,
 } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { selectionSpeechItems } from '@/lib/pdf-speech-text';
 import { useSpeechPlayer } from '@/components/workspace/useSpeechPlayer';
+import { EditProposalCard } from '@/components/workspace/EditProposalCard';
 
 pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
@@ -96,6 +100,7 @@ export function PdfViewer() {
     setScreenshotMode,
     pdfRevision,
     pdfJump,
+    pdfGoto,
     notifyPdfEdited,
   } = useWorkspace();
   const activePdfPath = activePdf?.path ?? '';
@@ -125,6 +130,8 @@ export function PdfViewer() {
   const [exportLoading, setExportLoading] = useState(false);
   const [exportMarkdown, setExportMarkdown] = useState('');
   const [notesOpen, setNotesOpen] = useState(false);
+  const [gapProposalId, setGapProposalId] = useState<string | null>(null);
+  const [gapPreparing, setGapPreparing] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [editSummary, setEditSummary] = useState<EditSummary | null>(null);
   // Page to scroll to once the reloaded PDF is ready (after an edit is applied).
@@ -403,6 +410,37 @@ export function PdfViewer() {
     writeStoredPdfPage(activePdfPath, pageNumber);
   }, [activePdfPath, numPages, pageNumber]);
 
+  // Tell the chat which page is in view, so "this" and "here" resolve to it (read when a message is sent).
+  useEffect(() => {
+    if (numPages !== null) viewerPage.current = pageNumber;
+  }, [numPages, pageNumber]);
+
+  useEffect(() => () => { viewerPage.current = null; }, []);
+
+  // By hand, no AI: pull what starts the next page up into the empty space under this page, after a preview.
+  const prepareManualEdit = async (action: 'prepare-pull-up' | 'prepare-renumber' | 'prepare-clean') => {
+    if (!activePdfPath || gapPreparing) return;
+    setGapPreparing(true);
+    try {
+      const res = await fetch('/api/workspace/edits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pdfPath: activePdfPath, action, page: pageNumber }),
+      });
+      const data = await res.json();
+      if (!res.ok || typeof data?.proposal?.id !== 'string') throw new Error(typeof data?.error === 'string' ? data.error : 'Could not prepare the edit.');
+      setGapProposalId(data.proposal.id as string);
+    } catch (error) {
+      setSelectionNotice(error instanceof Error ? error.message : 'Could not prepare the edit.');
+    } finally {
+      setGapPreparing(false);
+    }
+  };
+
+  const handlePullUp = () => prepareManualEdit('prepare-pull-up');
+  const handleRenumber = () => prepareManualEdit('prepare-renumber');
+  const handleClean = () => prepareManualEdit('prepare-clean');
+
   const editMarkByPage = useMemo(() => {
     const out: Record<number, 'added' | 'changed'> = {};
     for (const mark of editSummary?.marks ?? []) out[mark.page] = mark.kind;
@@ -432,6 +470,19 @@ export function PdfViewer() {
 
     setPageNumber(nextPage);
   };
+
+  // The assistant's "take me there": scroll to the page it named. A request made before the PDF has loaded is ignored.
+  const lastGotoNonceRef = useRef<number>(pdfGoto?.nonce ?? 0);
+  useEffect(() => {
+    if (!pdfGoto || pdfGoto.nonce === lastGotoNonceRef.current || numPages === null) return;
+    lastGotoNonceRef.current = pdfGoto.nonce;
+    const target = Math.min(Math.max(pdfGoto.page, 1), numPages);
+    finishRestore();
+    handlePageChange(target);
+    setSelectionNotice(`Took you to page ${target}.`);
+  // handlePageChange is recreated every render; only a new request or a finished load should re-run this.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pdfGoto, numPages]);
 
   const speech = useSpeechPlayer();
   const stopSpeech = speech.stop;
@@ -1105,6 +1156,30 @@ export function PdfViewer() {
             <Camera size={12} strokeWidth={2} />
           </button>
           <button
+            onClick={() => void handlePullUp()}
+            disabled={gapPreparing || !numPages}
+            className="w-6 h-6 rounded flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors disabled:opacity-50"
+            title={`Remove the empty space at the bottom of page ${pageNumber}: pull the content that follows up into it (shows a preview first, no AI)`}
+          >
+            {gapPreparing ? <Loader2 size={12} className="animate-spin" /> : <FoldVertical size={12} strokeWidth={2} />}
+          </button>
+          <button
+            onClick={() => void handleClean()}
+            disabled={gapPreparing || !numPages}
+            className="w-6 h-6 rounded flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors disabled:opacity-50"
+            title="Clean up the file: remove hidden duplicate content left by earlier edits, so pages open and scroll fast (nothing visible changes)"
+          >
+            <Sparkles size={12} strokeWidth={2} />
+          </button>
+          <button
+            onClick={() => void handleRenumber()}
+            disabled={gapPreparing || !numPages}
+            className="w-6 h-6 rounded flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors disabled:opacity-50"
+            title="Renumber the printed page numbers so they match the page positions (shows a preview first, no AI)"
+          >
+            <Hash size={12} strokeWidth={2} />
+          </button>
+          <button
             onClick={() => void handleOpenExportPreview()}
             className="w-6 h-6 rounded flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors"
             title="Export highlights as Markdown"
@@ -1371,6 +1446,24 @@ export function PdfViewer() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {gapProposalId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setGapProposalId(null)}>
+          <div
+            className="relative max-h-[85vh] w-full max-w-[640px] overflow-auto rounded-2xl bg-surface p-4 shadow-ambient"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              onClick={() => setGapProposalId(null)}
+              className="absolute right-3 top-3 text-on-surface-variant hover:text-on-surface"
+              aria-label="Close"
+            >
+              <X size={14} strokeWidth={2} />
+            </button>
+            <EditProposalCard pdfPath={activePdfPath} proposalId={gapProposalId} />
           </div>
         </div>
       )}

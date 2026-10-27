@@ -226,6 +226,14 @@ function block(c: Collector, path: string, value: unknown): Block | null {
     }
     case 'diagram':
       return { type: 'diagram', spec: diagram(c, `${path}.spec`, value.spec), caption: str(c, `${path}.caption`, value.caption, 400) };
+    case 'image': {
+      const imagePath = str(c, `${path}.path`, value.path, 500);
+      const attachment = /^(?:.*\/)?\.annot\/attachments\/[^/]+\.(?:png|jpe?g|gif|bmp)$/i;
+      if (imagePath && (imagePath.startsWith('/') || imagePath.includes('..') || !attachment.test(imagePath))) {
+        c.add(`${path}.path`, 'must be the exact path of an attached image (PNG, JPEG, GIF or BMP) from the attachment list');
+      }
+      return { type: 'image', path: imagePath, caption: str(c, `${path}.caption`, value.caption, 400) };
+    }
     default:
       c.add(`${path}.type`, `unknown block type '${String(value.type)}'`);
       return null;
@@ -290,8 +298,28 @@ function op(c: Collector, path: string, value: unknown): EditOp | null {
       if (out.to.mode === 'new_pages') c.add(`${path}.to`, 'move_section moves within the flow of a page; use mode inline');
       return out;
     }
+    case 'delete_section': {
+      const from = isObject(value.from) ? value.from : {};
+      if (!isObject(value.from)) c.add(`${path}.from`, 'must be an object');
+      const out: EditOp = {
+        type: 'delete_section',
+        from: {
+          page: int(c, `${path}.from.page`, from.page, 1, 5000),
+          start_quote: str(c, `${path}.from.start_quote`, from.start_quote, LIMITS.quote),
+        },
+      };
+      const end = optStr(c, `${path}.from.end_quote`, from.end_quote, LIMITS.quote);
+      if (end) out.from.end_quote = end;
+      return out;
+    }
+    case 'clean_file':
+      return { type: 'clean_file' };
+    case 'renumber_pages':
+      return { type: 'renumber_pages' };
+    case 'pull_up':
+      return { type: 'pull_up', page: int(c, `${path}.page`, value.page, 1, 5000) };
     default:
-      c.add(`${path}.type`, `unknown operation '${String(value.type)}'. Allowed: insert_content, replace_passage, delete_passage, delete_pages, move_pages, move_section`);
+      c.add(`${path}.type`, `unknown operation '${String(value.type)}'. Allowed: insert_content, replace_passage, delete_passage, delete_pages, move_pages, move_section, delete_section, pull_up, renumber_pages, clean_file`);
       return null;
   }
 }

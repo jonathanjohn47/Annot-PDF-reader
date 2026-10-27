@@ -1,3 +1,4 @@
+import { documentTextPathFor } from '@/lib/document-context';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getSession } from '@/lib/annot-sessions';
@@ -5,6 +6,7 @@ import { getProviderRuntime } from '@/lib/ai-providers';
 import { createPdfNote } from '@/lib/pdf-notes';
 import { MAX_SCREENSHOTS } from '@/lib/screenshot-limits';
 import { appendNoteSavedConfirmation, extractNoteDirective } from '@/lib/note-directive';
+import { extractGotoDirective } from '@/lib/goto-directive';
 
 export async function POST(req: NextRequest) {
   try {
@@ -69,11 +71,13 @@ export async function POST(req: NextRequest) {
       prompt: `The user is asking a follow-up about ${focusDescription} — this may be a clarifying question, or a request to save something as a note (in which case follow the note-saving directive above). Focus on that.\n\nRequest: ${question.trim()}`,
       sessionKind: session.sessionKind,
       currentPdfPath: resolvedPdfPath,
+      documentTextPath: await documentTextPathFor(resolvedPdfPath),
       selectedText: trimmedSelectedText || null,
       screenshotPaths: validScreenshotPaths,
     });
 
-    const { cleanedContent, note } = extractNoteDirective(turn.content);
+    // Side Q&A has no page to navigate; just keep a stray go-to block out of the visible answer.
+    const { cleanedContent, note } = extractNoteDirective(extractGotoDirective(turn.content).cleanedContent);
     let finalAnswer = cleanedContent;
 
     if (note && resolvedPdfPath) {

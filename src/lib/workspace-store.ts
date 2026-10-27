@@ -39,6 +39,8 @@ export interface WorkspaceState {
   pdfRevision: number;
   // One-shot request for the viewer to scroll to a page (after an edit is applied)
   pdfJump: { page: number; nonce: number } | null;
+  // One-shot request for the viewer to scroll to a page in the PDF that is already open (the assistant's "take me there")
+  pdfGoto: { page: number; nonce: number } | null;
 }
 
 export interface WorkspaceActions {
@@ -56,7 +58,15 @@ export interface WorkspaceActions {
   clearScreenshots: () => void;
   setScreenshotMode: (active: boolean) => void;
   notifyPdfEdited: (page?: number) => void;
+  goToPdfPage: (page: number) => void;
 }
+
+// Page (1-based) in view in the PDF viewer, or null when none is open. Deliberately not React state: it changes on
+// every page flip while scrolling, and the chat only needs it at the moment a message is sent.
+export const viewerPage: { current: number | null } = { current: null };
+
+// For a Word document: describes what is at the top of the visible area, asked for when a chat message is sent.
+export const viewerLocation: { current: (() => string | null) | null } = { current: null };
 
 export type WorkspaceContextType = WorkspaceState & WorkspaceActions;
 

@@ -46,7 +46,14 @@ export interface ProviderTurnInput {
   prompt: string;
   currentPdfPath?: string | null;
   selectedText?: string | null;
+  /** Page (1-based) the user is viewing in the PDF viewer, when known. */
+  currentPage?: number | null;
+  /** For a Word document: Markdown copy the AI reads (workspace-relative), and what is at the top of the screen. */
+  documentTextPath?: string | null;
+  currentLocation?: string | null;
   screenshotPaths?: string[];
+  /** Files and images the user attached from disk to this message (workspace-relative paths). */
+  attachmentPaths?: string[];
   /** PDF-editing instructions for this turn (see lib/pdf-edit). Absent means editing is not offered. */
   edit?: EditPromptContext;
 }

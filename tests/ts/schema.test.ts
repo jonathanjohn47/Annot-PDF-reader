@@ -86,7 +86,19 @@ describe('validateProposal', () => {
       { type: 'delete_pages', pages: [4] },
       { type: 'move_pages', pages: [5], after_page: 1 },
       { type: 'move_section', from: { page: 2, start_quote: 'start words' }, to: { page: 3, position: 'page_end' } },
+      { type: 'delete_section', from: { page: 2, start_quote: 'start words', end_quote: 'end words' } },
+      { type: 'pull_up', page: 3 },
     ]));
     assert.equal(result.ok, true, result.ok ? '' : result.errors.join('\n'));
+  });
+
+  it('accepts the operations that take no parameters', () => {
+    const result = validateProposal(base([{ type: 'renumber_pages' }, { type: 'clean_file' }]));
+    assert.equal(result.ok, true, result.ok ? '' : result.errors.join('\n'));
+  });
+
+  it('rejects a pull_up without a valid page', () => {
+    assert.equal(validateProposal(base([{ type: 'pull_up', page: 0 }])).ok, false);
+    assert.equal(validateProposal(base([{ type: 'pull_up' }])).ok, false);
   });
 });

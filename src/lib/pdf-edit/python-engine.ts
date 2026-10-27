@@ -1,10 +1,16 @@
 import { spawn } from 'child_process';
+import os from 'os';
 import path from 'path';
 
 import { getPythonCommand } from '../python-runtime.ts';
 import type { EditProposal, EngineResult } from './types.ts';
 
 const ENGINE_TIMEOUT_MS = 180_000;
+
+// Same default as getWorkspaceRoot() in annot-sessions; kept here so this module stays free of app-only imports.
+function getWorkspaceRootPath(): string {
+  return process.env.ANNOT_ROOT || path.join(os.homedir(), 'Annot');
+}
 
 export function getEngineScriptPath(): string {
   return process.env.ANNOT_EDIT_SCRIPT || path.join(process.cwd(), 'pdf-engine', 'annot_pdf_edit.py');
@@ -53,7 +59,7 @@ export function buildDocumentEdit(
   proposal: EditProposal,
   options: { outPath?: string; previewDir?: string } = {},
 ): Promise<EngineResult> {
-  return runEngine<EngineResult>({ action: 'build', pdfPath, proposal, ...options });
+  return runEngine<EngineResult>({ action: 'build', pdfPath, proposal, workspaceRoot: getWorkspaceRootPath(), ...options });
 }
 
 export interface DocumentMap {

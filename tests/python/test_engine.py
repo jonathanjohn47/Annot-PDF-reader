@@ -85,9 +85,9 @@ class EngineCase(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmp.cleanup()
 
-    def build(self, prop, pdf=None, out=True, previews=True):
+    def build(self, prop, pdf=None, out=True, previews=True, **extra):
         pdf = pdf or self.pdf
-        payload = {"action": "build", "pdfPath": pdf, "proposal": prop}
+        payload = {"action": "build", "pdfPath": pdf, "proposal": prop, **extra}
         if out:
             payload["outPath"] = os.path.join(self.tmp.name, "out.pdf")
             if os.path.exists(payload["outPath"]):
@@ -142,6 +142,46 @@ class TestInsert(EngineCase):
         # the diagram is vector: no raster image was embedded for it
         self.assertEqual(len(doc[3].get_images()), 0)
         self.assertLessEqual(added, 1)
+
+    def test_drawings_clipped_off_the_page_do_not_break_a_later_edit(self):
+        # An earlier diagram can leave invisible vector items below the page edge; they must not count as content.
+        pdf = os.path.join(self.tmp.name, "offpage.pdf")
+        doc = fitz.open(self.unnumbered)
+        page = doc[3]
+        bottom = page.rect.y1
+        for p1, p2 in (((246, 400), (246, bottom + 70)), ((200, bottom + 250), (400, bottom + 250)), ((200, bottom + 270), (400, bottom + 270))):
+            shape = page.new_shape()
+            shape.draw_line(fitz.Point(*p1), fitz.Point(*p2))
+            shape.finish(color=(0, 0, 0), width=1)
+            shape.commit()
+        doc.save(pdf)
+        doc.close()
+        result = self.build(self.hierarchy(), pdf=pdf)
+        self.assertTrue(result["ok"], result["issues"])
+        self.assertIn("What a logit is", self.page_text(self.result_doc(), 4))
+
+    def test_repeated_edits_on_one_page_do_not_nest_copies_of_the_page(self):
+        # A page of many small blocks (table rows, equations). Each re-flow used to embed one full copy of the page per
+        # moved block, and the next edit nested those copies again, so the page grew by a multiple on every edit.
+        pdf = os.path.join(self.tmp.name, "rows.pdf")
+        doc = fitz.open()
+        for _ in range(2):
+            page = doc.new_page(width=595, height=842)
+            for row in range(1, 25):
+                page.insert_text((72, 60 + row * 28), f"Row {row} holds one short statement about item {row}.", fontsize=11)
+        doc.save(pdf)
+        doc.close()
+
+        counts = []
+        current = pdf
+        for round_number in range(3):
+            note = {"type": "paragraph", "text": "An inserted note placed in the middle of the page."}
+            result = self.build(proposal([insert_op([note], page=1, before_quote="Row 3 holds one short statement")]), pdf=current)
+            self.assertTrue(result["ok"], result["issues"])
+            current = os.path.join(self.tmp.name, f"rows{round_number}.pdf")
+            os.replace(os.path.join(self.tmp.name, "out.pdf"), current)
+            counts.append(len(fitz.open(current)[0].get_xobjects()))
+        self.assertLessEqual(max(counts), 60, counts)  # was [44, 126, 990] with one copy of the page per moved block
 
     def test_3_only_the_requested_pages_change(self):
         result = self.build(self.hierarchy())
@@ -435,3 +475,200 @@ class TestContext(EngineCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestImagesAndSections(EngineCase):
+    ATTACHMENT = ".annot/attachments/0001-flowchart.png"
+
+    def setUp(self):
+        self.root = os.path.join(self.tmp.name, "root")
+        folder = os.path.join(self.root, ".annot", "attachments")
+        os.makedirs(folder, exist_ok=True)
+        pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 640, 320), False)
+        pix.set_rect(pix.irect, (40, 90, 160))
+        pix.set_rect(fitz.IRect(20, 20, 300, 120), (240, 220, 80))
+        pix.save(os.path.join(folder, "0001-flowchart.png"))
+
+    def image_op(self, path=None, **placement):
+        return insert_op([{"type": "image", "path": path or self.ATTACHMENT, "caption": "Training flowchart supplied by the reader."}], **placement)
+
+    def test_attached_image_is_placed_with_its_caption(self):
+        result = self.build(proposal([self.image_op()]), workspaceRoot=self.root)
+        self.assertTrue(result["ok"], result["issues"])
+        doc = self.result_doc()
+        self.assertEqual(len(doc[3].get_images()), 1)
+        self.assertIn("Training flowchart supplied by the reader.", self.page_text(doc, 4))
+        self.assertIn("At every saved checkpoint", self.page_text(doc, 4))
+
+    def test_image_must_be_an_attachment_inside_the_workspace(self):
+        outside = os.path.join(self.tmp.name, "secret.png")
+        fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 10, 10), False).save(outside)
+        for bad in ("../secret.png", "secret.png", ".annot/attachments/missing.png"):
+            result = self.build(proposal([self.image_op(path=bad)]), workspaceRoot=self.root)
+            self.assertFalse(result["ok"], bad)
+            self.assertTrue(self.codes(result) & {"image_path", "image_missing"}, result["issues"])
+
+    def test_delete_section_removes_a_figure_and_its_label_then_image_takes_its_place(self):
+        first = self.build(proposal(self.hierarchy_ops()[0], facts=FACTS, derived=DERIVED, terms_defined=["logit"],
+                                    prerequisites=[{"term": "logit", "status": "defined_by_this_edit"}],
+                                    existing_coverage={"checked": True, "found": [{"page": 7}], "decision": "complete_explanation"}))
+        self.assertTrue(first["ok"], first["issues"])
+        generated = os.path.join(self.tmp.name, "with-diagram.pdf")
+        os.replace(os.path.join(self.tmp.name, "out.pdf"), generated)
+        self.assertIn("Strongest wrong logit", self.page_text(fitz.open(generated), 4))
+
+        remove = {"type": "delete_section", "from": {"page": 4, "start_quote": "What a logit is", "end_quote": "How one experiment reduces the 113 logits"}}
+        result = self.build(proposal([remove, self.image_op(before_quote=ANCHOR)], qualification_check="No caveat is touched."),
+                            pdf=generated, workspaceRoot=self.root)
+        self.assertTrue(result["ok"], result["issues"])
+        doc = self.result_doc()
+        text = self.page_text(doc, 4)
+        self.assertNotIn("Strongest wrong logit", text)
+        self.assertNotIn("What a logit is", text)
+        self.assertIn("Training flowchart supplied by the reader.", text)
+        self.assertEqual(text.count("Added for clarity"), 1)  # the removed figure's label went with it; the image has its own
+        self.assertIn("At every saved checkpoint", text)
+
+    def hierarchy_ops(self):
+        return [[insert_op([
+            {"type": "heading", "level": 3, "text": "What a logit is"},
+            {"type": "paragraph", "text": "A **logit** is the raw score the network gives to one class before the scores become probabilities. Each example has 113 logits."},
+            {"type": "diagram", "spec": DIAGRAM, "caption": "How one experiment reduces the 113 logits of each example to one population-level measurement."},
+        ])]]
+
+
+class TestPullUp(EngineCase):
+    def make(self, first_rows, second_rows, name):
+        path = os.path.join(self.tmp.name, name)
+        doc = fitz.open()
+        for page_no, rows in ((1, first_rows), (2, second_rows)):
+            page = doc.new_page(width=595, height=842)
+            page.insert_text((72, 30), "Running header of the paper", fontsize=8)
+            for row in range(rows):
+                page.insert_text((72, 90 + row * 30), f"Page {page_no} line {row + 1} says something short.", fontsize=11)
+        doc.save(path)
+        doc.close()
+        return path
+
+    def pull(self, pdf, page=1):
+        return self.build(proposal([{"type": "pull_up", "page": page}], qualification_check="Nothing is removed."), pdf=pdf)
+
+    def test_next_page_content_fills_the_empty_bottom_and_the_empty_page_goes(self):
+        pdf = self.make(3, 4, "short.pdf")
+        result = self.pull(pdf)
+        self.assertTrue(result["ok"], result["issues"])
+        doc = self.result_doc()
+        self.assertEqual(doc.page_count, 1)
+        text = self.page_text(doc, 1)
+        for line in ("Page 1 line 3", "Page 2 line 1", "Page 2 line 4"):
+            self.assertIn(line, text)
+        self.assertLess(text.index("Page 1 line 3"), text.index("Page 2 line 1"))
+        self.assertEqual(text.count("Running header"), 1)   # the header of the removed page did not travel with the content
+
+    def test_only_the_blocks_that_fit_move_and_the_rest_closes_up(self):
+        pdf = self.make(3, 26, "long.pdf")     # 26 lines of 30pt do not fit under 3 lines
+        result = self.pull(pdf)
+        self.assertTrue(result["ok"], result["issues"])
+        doc = self.result_doc()
+        self.assertEqual(doc.page_count, 2)
+        first, second = self.page_text(doc, 1), self.page_text(doc, 2)
+        self.assertIn("Page 2 line 1 ", first)
+        self.assertNotIn("Page 2 line 1 ", second)
+        self.assertIn("Page 2 line 26", second)
+        self.assertTrue(set(range(1, 27)) == {n for n in range(1, 27) if f"Page 2 line {n} " in first + " " + second})
+
+    def test_nothing_to_pull_on_the_last_page_or_when_the_first_block_does_not_fit(self):
+        pdf = self.make(3, 4, "short2.pdf")
+        self.assertIn("no_next_page", self.codes(self.pull(pdf, page=2), "error"))
+        full = self.make(26, 4, "full.pdf")
+        self.assertIn("does_not_fit", self.codes(self.pull(full), "error"))
+
+
+class TestRenumber(EngineCase):
+    def make(self, count, numbered=True, name="numbered.pdf"):
+        path = os.path.join(self.tmp.name, name)
+        doc = fitz.open()
+        for n in range(1, count + 1):
+            page = doc.new_page(width=595, height=842)
+            page.insert_text((72, 40), "Running header of the paper", fontsize=10, fontname="tiro")
+            if numbered:
+                page.insert_text((520, 40), str(n), fontsize=10, fontname="tiro")
+            page.insert_text((72, 120), f"Body of page {n} mentions item {n}0 here.", fontsize=11)
+        doc.save(path)
+        doc.close()
+        return path
+
+    def header_number(self, doc, index):
+        words = [w[4] for w in doc[index].get_text("words") if w[3] < 60 and w[4].isdigit()]
+        return words
+
+    def test_numbers_follow_the_pages_after_a_page_was_removed(self):
+        pdf = self.make(5)
+        removed = self.build(proposal([{"type": "delete_pages", "pages": [2]}], qualification_check="Page two is redundant."), pdf=pdf)
+        self.assertTrue(removed["ok"], removed["issues"])
+        gapped = os.path.join(self.tmp.name, "gapped.pdf")
+        os.replace(os.path.join(self.tmp.name, "out.pdf"), gapped)
+        self.assertEqual([self.header_number(fitz.open(gapped), i) for i in range(4)], [["1"], ["3"], ["4"], ["5"]])
+
+        result = self.build(proposal([{"type": "renumber_pages"}], qualification_check="Only the printed numbers change."), pdf=gapped)
+        self.assertTrue(result["ok"], result["issues"])
+        doc = self.result_doc()
+        self.assertEqual([self.header_number(doc, i) for i in range(4)], [["1"], ["2"], ["3"], ["4"]])
+        self.assertIn("Body of page 3 mentions item 30 here.", self.page_text(doc, 2))   # the body is untouched
+        self.assertEqual(result["stats"]["changedPages"], 3)                             # page 1 was already right
+
+    def test_a_page_without_a_number_gets_one_and_its_header(self):
+        pdf = self.make(4)
+        doc = fitz.open(pdf)
+        page = doc[2]
+        page.add_redact_annot(fitz.Rect(0, 20, 595, 50))
+        page.apply_redactions()
+        gapped = os.path.join(self.tmp.name, "nohead.pdf")
+        doc.save(gapped)
+        doc.close()
+        result = self.build(proposal([{"type": "renumber_pages"}], qualification_check="Only the printed numbers change."), pdf=gapped)
+        self.assertTrue(result["ok"], result["issues"])
+        out = self.result_doc()
+        self.assertEqual(self.header_number(out, 2), ["3"])
+        self.assertIn("Running header of the paper", self.page_text(out, 3))
+
+    def test_refuses_when_there_is_nothing_to_renumber(self):
+        plain = self.make(4, numbered=False, name="plain.pdf")
+        self.assertIn("no_page_numbers", self.codes(self.build(proposal([{"type": "renumber_pages"}], qualification_check="x"), pdf=plain)))
+        fine = self.make(4, name="fine.pdf")
+        self.assertIn("already_numbered", self.codes(self.build(proposal([{"type": "renumber_pages"}], qualification_check="x"), pdf=fine)))
+
+
+class TestCleanFile(EngineCase):
+    def bloated(self):
+        """A document edited three times WITHOUT the clean-up pass, as files made by earlier versions are."""
+        from annot_edit.flow import WorkDoc
+        from annot_edit.ops import apply_ops
+        path = self.pdf
+        for round_number in range(3):
+            work = WorkDoc(path)
+            note = {"type": "paragraph", "text": "A short note placed in front of the sentence."}
+            apply_ops(work, [insert_op([note])], None)
+            path = os.path.join(self.tmp.name, f"bloat{round_number}.pdf")
+            work.doc.save(path, garbage=3, deflate=True)
+        return path
+
+    def render(self, path):
+        doc = fitz.open(path)
+        return [doc[i].get_pixmap(dpi=50, colorspace=fitz.csGRAY).samples for i in range(doc.page_count)]
+
+    def test_hidden_copies_go_and_nothing_visible_changes(self):
+        path = self.bloated()
+        before_forms = sum(len(fitz.open(path)[i].get_xobjects()) for i in range(fitz.open(path).page_count))
+        result = self.build(proposal([{"type": "clean_file"}], qualification_check="Nothing visible changes."), pdf=path)
+        if not result["ok"]:
+            self.assertIn("nothing_to_clean", self.codes(result))   # already tidy: also fine
+            return
+        out = os.path.join(self.tmp.name, "out.pdf")
+        self.assertEqual(self.render(out), self.render(path))
+        cleaned = fitz.open(out)
+        self.assertEqual([" ".join(p.get_text().split()) for p in cleaned], [" ".join(p.get_text().split()) for p in fitz.open(path)])
+        self.assertLess(sum(len(cleaned[i].get_xobjects()) for i in range(cleaned.page_count)), before_forms)
+
+    def test_a_clean_document_has_nothing_to_clean(self):
+        self.assertIn("nothing_to_clean", self.codes(self.build(proposal([{"type": "clean_file"}], qualification_check="x"))))

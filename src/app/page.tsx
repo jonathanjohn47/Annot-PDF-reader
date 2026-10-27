@@ -16,6 +16,11 @@ const PdfViewer = dynamic(
   { ssr: false },
 );
 
+const DocxViewer = dynamic(
+  () => import('@/components/workspace/DocxViewer').then((mod) => mod.DocxViewer),
+  { ssr: false },
+);
+
 const DEFAULT_CHAT_PANEL_WIDTH = 420;
 const MIN_CHAT_PANEL_WIDTH = 320;
 const MAX_CHAT_PANEL_WIDTH = 720;
@@ -39,6 +44,7 @@ export default function AppPage() {
     screenshotMode: false,
     pdfRevision: 0,
     pdfJump: null,
+    pdfGoto: null,
   });
   const [chatPanelWidth, setChatPanelWidth] = useState(DEFAULT_CHAT_PANEL_WIDTH);
   const [isResizingChat, setIsResizingChat] = useState(false);
@@ -158,6 +164,10 @@ export default function AppPage() {
     }));
   }, []);
 
+  const goToPdfPage = useCallback((page: number) => {
+    setState((s) => ({ ...s, pdfGoto: { page, nonce: (s.pdfGoto?.nonce ?? 0) + 1 } }));
+  }, []);
+
   const refreshTree = useCallback(async () => {
     const res = await fetch('/api/workspace/tree', { cache: 'no-store' });
     const data = await res.json();
@@ -190,12 +200,12 @@ export default function AppPage() {
         treeRoot: nextTree,
         treeLoading: false,
         selectedNode: nextSelectedNode,
-        activePdf: nextActivePdf?.type === 'pdf' ? nextActivePdf : null,
+        activePdf: nextActivePdf && nextActivePdf.type !== 'folder' ? nextActivePdf : null,
         activeSessionFolder: nextActiveSessionFolder?.type === 'folder'
           ? nextActiveSessionFolder.path
           : (shouldClearSession ? null : current.activeSessionFolder),
         activeSessionKind: shouldClearSession ? null : current.activeSessionKind,
-        activeSessionPdfPath: nextActivePdf?.type === 'pdf'
+        activeSessionPdfPath: nextActivePdf && nextActivePdf.type !== 'folder'
           ? nextActivePdf.path
           : (shouldClearSession ? null : current.activeSessionPdfPath),
         activeSessionId: shouldClearSession ? null : current.activeSessionId,
@@ -315,6 +325,7 @@ export default function AppPage() {
     clearScreenshots,
     setScreenshotMode,
     notifyPdfEdited,
+    goToPdfPage,
   };
   const contextValue = { ...ctx, refreshTree };
 
@@ -329,9 +340,11 @@ export default function AppPage() {
           {/* Main Content Area */}
           <div ref={mainContentRef} className="flex-1 flex min-w-0">
             {state.activePdf ? (
-              // PDF is open — show viewer
-              <div className={`flex-1 min-w-0 ${state.chatOpen ? '' : ''}`}>
-                <PdfViewer key={state.activePdf.path} />
+              // A document is open — show the viewer for its kind
+              <div className="flex-1 min-w-0">
+                {state.activePdf.type === 'docx'
+                  ? <DocxViewer key={state.activePdf.path} />
+                  : <PdfViewer key={state.activePdf.path} />}
               </div>
             ) : state.selectedNode?.type === 'folder' ? (
               // Folder selected — show folder overview

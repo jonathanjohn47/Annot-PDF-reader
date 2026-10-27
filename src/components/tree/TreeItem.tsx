@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { TreeNode } from '@/types';
 import { useWorkspace } from '@/lib/workspace-store';
 import { ChevronRight, Ellipsis, FileText, Folder, FolderInput, FolderOpen, Pencil, Trash2 } from 'lucide-react';
+import { stripDocumentExtension } from '@/lib/document-types';
 import { findNode, getParentFolderPath } from '@/lib/tree-utils';
 import { TreePromptDialog } from './TreePromptDialog';
 
@@ -117,7 +118,7 @@ export function TreeItem({ node, depth, selectedPath }: TreeItemProps) {
   };
 
   const handleMovePdf = async (targetFolderPath: string) => {
-    if (node.type !== 'pdf') return;
+    if (node.type === 'folder') return;
     setIsMutating(true);
     try {
       const res = await fetch('/api/papers', {
@@ -180,7 +181,7 @@ export function TreeItem({ node, depth, selectedPath }: TreeItemProps) {
                 <Folder size={14} strokeWidth={1.8} className="text-on-surface-variant" />
               )
             ) : (
-              <FileText size={13} strokeWidth={1.8} className="text-outline" />
+              <FileText size={13} strokeWidth={1.8} className={node.type === 'docx' ? 'text-[#2a5d8f]' : 'text-outline'} />
             )}
           </span>
 
@@ -208,7 +209,7 @@ export function TreeItem({ node, depth, selectedPath }: TreeItemProps) {
 
           {menuOpen && (
             <div className="absolute right-0 top-7 z-20 min-w-36 rounded-lg border border-outline-variant/20 bg-surface-container-lowest py-1 shadow-ambient">
-              {node.type === 'pdf' && (
+              {node.type !== 'folder' && (
                 <button
                   onClick={() => {
                     setMenuOpen(false);
@@ -255,12 +256,12 @@ export function TreeItem({ node, depth, selectedPath }: TreeItemProps) {
       {renameDialogOpen && (
         <TreePromptDialog
           open
-          title={node.type === 'pdf' ? 'Rename PDF' : 'Rename Folder'}
-          description={node.type === 'pdf'
-            ? 'Change the visible PDF file name.'
+          title={node.type !== 'folder' ? 'Rename file' : 'Rename Folder'}
+          description={node.type !== 'folder'
+            ? 'Change the visible file name.'
             : 'Change the folder name.'}
-          initialValue={node.type === 'pdf' ? node.name.replace(/\.pdf$/i, '') : node.name}
-          placeholder={node.type === 'pdf' ? 'PDF name' : 'Folder name'}
+          initialValue={node.type !== 'folder' ? stripDocumentExtension(node.name) : node.name}
+          placeholder={node.type !== 'folder' ? 'File name' : 'Folder name'}
           confirmLabel="Rename"
           busy={isMutating}
           onCancel={() => setRenameDialogOpen(false)}
@@ -268,11 +269,11 @@ export function TreeItem({ node, depth, selectedPath }: TreeItemProps) {
         />
       )}
 
-      {node.type === 'pdf' && moveDialogOpen && (
+      {node.type !== 'folder' && moveDialogOpen && (
         <TreePromptDialog
           open
-          title="Move PDF"
-          description="Enter a folder path relative to the workspace root. Leave it blank to move the PDF to the root."
+          title="Move file"
+          description="Enter a folder path relative to the workspace root. Leave it blank to move the file to the root."
           initialValue={getParentFolderPath(node)}
           placeholder="Target folder path"
           confirmLabel="Move"

@@ -194,6 +194,44 @@ class DiagramItem(Item):
         return fitz.Rect(x, y, x + width, cap_rect.y1)
 
 
+class ImageItem(Item):
+    """A picture the user attached, centred in the text column at no more than its natural (96 dpi) size, with a caption."""
+    kind = "image"
+    MAX_HEIGHT = 420.0
+
+    def __init__(self, path: str, caption: str, style: Style, before: float, after: float) -> None:
+        try:
+            pix = fitz.Pixmap(path)
+        except Exception as err:
+            raise EditError("image_unreadable", f"The attached image could not be read ({err}). Use a PNG, JPEG, GIF or BMP file.")
+        if pix.width < 2 or pix.height < 2:
+            raise EditError("image_unreadable", "The attached image is too small to place.")
+        self.path = path
+        self.natural = (pix.width * 0.75, pix.height * 0.75)
+        self.space_before, self.space_after = before, after
+        self.caption_item = HtmlItem(
+            "caption",
+            f"<div class='b'><p style='font-size:{style.size * 0.9:.2f}pt'><i>{inline_html(caption)}</i></p></div>",
+            style.css(), plain_text(caption), style.size * 0.9, before=0.0, after=0.0,
+        )
+        self.visible = plain_text(caption)
+
+    def _size(self, width: float) -> Tuple[float, float]:
+        nw, nh = self.natural
+        scale = min(1.0, width / nw, self.MAX_HEIGHT / nh)
+        return nw * scale, nh * scale
+
+    def measure(self, width: float) -> float:
+        return self._size(width)[1] + 4 + self.caption_item.measure(width)
+
+    def draw(self, page: fitz.Page, x: float, y: float, width: float) -> fitz.Rect:
+        w, h = self._size(width)
+        left = x + (width - w) / 2
+        page.insert_image(fitz.Rect(left, y, left + w, y + h), filename=self.path, keep_proportion=False)
+        cap_rect = self.caption_item.draw(page, x, y + h + 4, width)
+        return fitz.Rect(x, y, x + width, cap_rect.y1)
+
+
 class ClipItem(Item):
     """A slice of an existing page, moved verbatim (move_section)."""
     kind = "clip"
@@ -252,6 +290,8 @@ def block_texts(block: Dict[str, Any]) -> List[str]:
         for row in block.get("rows", []):
             cells += [str(c) for c in row]
         return cells + [str(block.get("caption", "") or "")]
+    if kind == "image":
+        return [str(block.get("caption", ""))]
     if kind == "diagram":
         from .diagram import diagram_texts
         return diagram_texts(block.get("spec", {})) + [str(block.get("caption", ""))]
@@ -316,6 +356,10 @@ def build_items(blocks: List[Dict[str, Any]], style: Style, resolve_refs: Callab
         elif kind == "diagram":
             spec = dict(block.get("spec", {}))
             items.append(DiagramItem(spec, r(block.get("caption")), style, before=gap, after=0.3 * s))
+        elif kind == "image":
+            if not block.get("abs_path"):
+                raise EditError("image_missing", "The image block has no resolved file.")
+            items.append(ImageItem(block["abs_path"], r(block.get("caption")), style, before=gap, after=0.3 * s))
         else:
             raise EditError("unknown_block", f"Unknown block type '{kind}'.")
     return items

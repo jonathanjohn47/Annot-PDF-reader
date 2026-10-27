@@ -100,7 +100,7 @@ export function FolderView() {
             {selectedNode.name}
           </h1>
           <p className="font-editorial text-on-surface-variant italic mt-1">
-            {pdfs.length} PDF{pdfs.length !== 1 ? 's' : ''} in scope &middot;{' '}
+            {pdfs.length} document{pdfs.length !== 1 ? 's' : ''} in scope &middot;{' '}
             {sessions.length} session{sessions.length !== 1 ? 's' : ''}
           </p>
         </div>
@@ -127,12 +127,12 @@ export function FolderView() {
         {/* PDFs in scope */}
         <section className="mb-10">
           <h2 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-4">
-            PDFs in Scope
+            Documents in Scope
           </h2>
           {pdfs.length === 0 ? (
             <div className="bg-surface-dim rounded-lg p-8 text-center">
-              <p className="text-sm text-on-surface-variant">No PDFs in this folder yet.</p>
-              <p className="text-xs text-outline mt-1">Drop PDF files here or add them via the file system.</p>
+              <p className="text-sm text-on-surface-variant">No documents in this folder yet.</p>
+              <p className="text-xs text-outline mt-1">Upload PDF or Word files, or add them via the file system.</p>
             </div>
           ) : (
             <div className="space-y-1">

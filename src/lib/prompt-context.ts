@@ -1,4 +1,5 @@
 import { getWorkspaceRoot } from '@/lib/annot-sessions';
+import { isDocxPath } from '@/lib/document-types';
 import { SessionKind } from '@/types';
 import { buildEditPromptLines, type EditPromptContext } from '@/lib/pdf-edit/edit-prompt';
 
@@ -8,11 +9,93 @@ export interface AnnotPromptInput {
   prompt: string;
   currentPdfPath?: string | null;
   selectedText?: string | null;
+  /** Page (1-based) the user is viewing in the PDF viewer right now. */
+  currentPage?: number | null;
+  /** Word documents: Markdown copy the AI reads (workspace-relative), and what is at the top of the reader's screen. */
+  documentTextPath?: string | null;
+  currentLocation?: string | null;
   screenshotPaths?: string[];
+  /** Files and images the user attached from disk (workspace-relative paths). */
+  attachmentPaths?: string[];
   /** True when resuming an existing provider session, which already holds the PDF and the rules from turn one. */
   isFollowUp?: boolean;
   /** PDF-editing instructions for this message; absent means editing is off. */
   edit?: EditPromptContext;
+}
+
+const EDITING_UNAVAILABLE_LINE =
+  '- Editing is not available for Word documents in Annot: do not propose any change to the file and do not emit an edit block. Answer in chat only.';
+
+// The first line(s) of the context: which document is open and, for a Word file, where its readable copy is.
+function describeOpenDocument(currentPdfPath: string | null | undefined, documentTextPath: string | null | undefined): string[] {
+  if (!currentPdfPath) return ['- No PDF is currently open in the viewer.'];
+  if (!isDocxPath(currentPdfPath)) return [`- Current PDF open in the viewer: ${currentPdfPath}`];
+  return [
+    `- Current document open in the viewer is a Word (.docx) file: ${currentPdfPath}`,
+    documentTextPath
+      ? `- You cannot open .docx files. Annot converted this one to Markdown (headings, lists, tables, equations written as $...$; pictures show only as image placeholders you cannot see). Read this file to know what the document says, and treat it as the document: ${documentTextPath}`
+      : '- A readable copy of this Word document is not available, so say so if the answer depends on its content.',
+  ];
+}
+
+function describeReaderLocation(currentLocation: string | null | undefined, currentPdfPath: string | null | undefined): string[] {
+  if (!currentLocation || !isDocxPath(currentPdfPath)) return [];
+  return [
+    `- The reader is looking at this part of the document right now: ${currentLocation}.`,
+    '- Treat that passage as the default location of whatever they mention: "this", "here", "the table", "the equation", or a vague "explain it". Find it in the Markdown copy by its words and answer from it first; the blocks just before and after come next. The reader\'s position only says where they are looking, never the limit of what you may read. When they ask about a named term, symbol, definition, or concept, search the whole Markdown copy for where the document defines it, and answer from that definition even if it sits far from the passage on screen; follow any "see Section X" pointer instead of repeating it. Say which part you used when the match is not obvious.',
+  ];
+}
+
+// For a Word document the shared instructions say "document" where they say "PDF". The selected text and the user's own
+// request (the last line) are never rewritten.
+function adaptToDocumentKind(lines: string[], currentPdfPath: string | null | undefined, selectedText: string | null | undefined): string[] {
+  if (!isDocxPath(currentPdfPath)) return lines;
+  const protectedText = selectedText?.trim();
+  return lines.map((line, index) => (
+    index === lines.length - 1 || (protectedText && line === protectedText)
+      ? line
+      : line.replace(/\bPDFs?\b/g, (word) => (word === 'PDF' ? 'document' : 'documents'))
+  ));
+}
+
+function describeCurrentPage(currentPage: number | null | undefined, currentPdfPath: string | null | undefined): string[] {
+  if (!currentPdfPath || !currentPage || currentPage < 1) return [];
+
+  return [
+    `- The user is looking at page ${currentPage} of the PDF right now (the ${currentPage}${ordinalSuffix(currentPage)} page of the file, as the helper commands count pages). Treat page ${currentPage} as the default location of whatever they point at: "this", "here", "the figure", "the diagram", "the equation", or a vague "explain it". Read page ${currentPage} first and answer from it. Pages ${Math.max(1, currentPage - 1)} and ${currentPage + 1} come next if page ${currentPage} does not contain it. The open page only says where they are looking, never the limit of what you may read. When they ask about a named term, symbol, definition, or concept ("what is a grok epoch?", "what is k90?"), the PDF's own definition is the answer wherever it sits: if page ${currentPage} does not define it fully, or only points elsewhere ("see Section A"), search the whole document for the term, read the page or section that defines it, and answer from that. Never answer with "the rule is in Section A" without reading Section A. Say which page you used when the match is not obvious.`,
+    `- For a PDF edit, "this", "here" and "replace/remove the ..." also refer to page ${currentPage} unless the user names another place; place new content on or right after page ${currentPage}.`,
+  ];
+}
+
+// "Take me there": the model names a page and the viewer scrolls to it. PDFs only; the Word viewer has no page numbers.
+function describeGoToPage(currentPdfPath: string | null | undefined): string[] {
+  if (!currentPdfPath || isDocxPath(currentPdfPath)) return [];
+
+  return [
+    '- Taking the reader to a page: if, and only if, the user asks to be taken, shown, or moved to a place in the PDF ("take me there", "go to the page where this is explained", "open that section"), find the page where it is actually explained and send them there. If they selected an entry from the index or table of contents, that entry is the topic: go to the page of the body text that explains it, not to the index page itself.',
+    '- Do not trust a page number printed in an index or on a page: it is usually offset from the file by the front matter. Read the page you mean to send them to and confirm it really holds the topic. The number you give is the file page number, counted as the helper commands count pages.',
+    '- Then answer in one short line saying where you took them (page number and what is there), and end the reply with exactly one line `<<<ANNOT_GOTO page=N>>>` (N is that file page number). Never mention this block. Do not emit it for ordinary questions, only when they ask to be taken somewhere. If you cannot find the place, say so and do not emit it.',
+  ];
+}
+
+function ordinalSuffix(n: number): string {
+  const lastTwo = n % 100;
+  if (lastTwo >= 11 && lastTwo <= 13) return 'th';
+  return { 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] ?? 'th';
+}
+
+function describeAttachments(
+  attachmentPaths: string[] | undefined,
+  attachmentInstruction: string,
+): string[] {
+  const paths = (attachmentPaths ?? []).map((item) => item.trim()).filter(Boolean);
+  if (paths.length === 0) return [];
+
+  return [
+    `- The user attached ${paths.length === 1 ? 'a file' : `${paths.length} files`} (images or documents) to this message:`,
+    ...paths.map((item, index) => `  Attachment ${index + 1}: ${item}`),
+    `- ${attachmentInstruction}`,
+  ];
 }
 
 function describeScreenshots(
@@ -46,7 +129,11 @@ export function buildAnnotPrompt(input: AnnotPromptInput, screenshotInstruction:
     prompt,
     currentPdfPath,
     selectedText,
+    currentPage,
     screenshotPaths,
+    attachmentPaths,
+    documentTextPath,
+    currentLocation,
     isFollowUp,
   } = input;
 
@@ -60,7 +147,10 @@ export function buildAnnotPrompt(input: AnnotPromptInput, screenshotInstruction:
     `- Workspace root: ${workspaceRoot}`,
     `- Current session folder: ${folderPath || '.'}`,
     `- Session type: ${sessionKind === 'pdf' ? 'PDF-focused reading session' : 'Folder-wide research session'}`,
-    currentPdfPath ? `- Current PDF open in the viewer: ${currentPdfPath}` : '- No PDF is currently open in the viewer.',
+    ...describeOpenDocument(currentPdfPath, documentTextPath),
+    ...describeCurrentPage(currentPage, currentPdfPath),
+    ...describeGoToPage(currentPdfPath),
+    ...describeReaderLocation(currentLocation, currentPdfPath),
     ...(selectedText?.trim()
       ? [
           '- The user has selected the following text in the PDF viewer. Treat it as the primary focus of their request unless the request clearly says otherwise:',
@@ -70,6 +160,7 @@ export function buildAnnotPrompt(input: AnnotPromptInput, screenshotInstruction:
         ]
       : []),
     ...describeScreenshots(screenshotPaths, screenshotInstruction, true),
+    ...describeAttachments(attachmentPaths, screenshotInstruction),
     sessionKind === 'pdf'
       ? '- Treat the current PDF as the primary document for this conversation. Only branch out when it materially helps.'
       : '- Prefer the current folder first, but you may inspect other files in the workspace if needed.',
@@ -169,23 +260,26 @@ export function buildAnnotPrompt(input: AnnotPromptInput, screenshotInstruction:
     `- Only emit this block when a PDF is currently open in the viewer (${currentPdfPath ? 'one is open now, per above' : 'none is open right now'}) and the user is genuinely asking for something to be saved as a note — never for ordinary questions or explanations. If they ask to save a note but no PDF is open, say in your normal reply that they should open a PDF first, and do not emit the block.`,
     '',
     'Editing the PDF itself:',
-    ...buildEditPromptLines(input.edit ?? { allowed: false }),
+    ...(isDocxPath(currentPdfPath) ? [EDITING_UNAVAILABLE_LINE] : buildEditPromptLines(input.edit ?? { allowed: false })),
     '',
     'User request:',
     prompt,
   ];
 
-  return contextLines.join('\n');
+  return adaptToDocumentKind(contextLines, currentPdfPath, selectedText).join('\n');
 }
 
 // Resumed sessions already carry the context, PDF contents, and style rules
 // from the first turn, so only send what can change per message.
 function buildFollowUpPrompt(input: AnnotPromptInput, screenshotInstruction: string): string {
-  const { prompt, currentPdfPath, selectedText, screenshotPaths } = input;
+  const { prompt, currentPdfPath, selectedText, currentPage, screenshotPaths, attachmentPaths, documentTextPath, currentLocation } = input;
 
   const lines = [
     'Follow-up message in the same session. The session context, explanation style, math formatting, and note-saving rules from earlier in this conversation still apply.',
-    currentPdfPath ? `- Current PDF open in the viewer: ${currentPdfPath}` : '- No PDF is currently open in the viewer.',
+    ...describeOpenDocument(currentPdfPath, documentTextPath),
+    ...describeCurrentPage(currentPage, currentPdfPath),
+    ...describeGoToPage(currentPdfPath),
+    ...describeReaderLocation(currentLocation, currentPdfPath),
     '- Silently re-diagnose where the student is stuck, using this new message together with the earlier ones. If it rephrases or circles an earlier question, the last answer missed the real gap: change the angle, do not repeat it, and do not add a new example unless the earlier one clearly failed. Never mention this diagnosis.',
     '- Correctness first: every step must be valid, not just plausible. Label a derivation, a definition/design choice, and a PDF fact honestly, and never present a choice as a proof. Check numeric claims with a small concrete case before asserting them, and answer the question actually asked.',
     '- If asked "why is formula B written differently from formula A", explain the written form: name what is being compared, write B\'s basic definition with the same ingredient as A (all terms), show the one regrouping that gives the written form, say what each grouped part means, and why that grouping is used. Never reply "they are the same underneath" in place of this. Never say the student wrote something that you wrote earlier.',
@@ -197,7 +291,7 @@ function buildFollowUpPrompt(input: AnnotPromptInput, screenshotInstruction: str
     '- For derivations: PDF\'s formula first, substitute the given condition in one plain line, simplify one named rule per row, stop at the PDF\'s result, then put in the PDF\'s numbers last (surprise per outcome first if the PDF defines it). General proof before numbers; no scaffold, no recap.',
     '- First decide: calculation question (compute, derive, prove, verify) or meaning question (what is it, what is it for, so what, or an objection that it is not practically useful). For a meaning question, explain like a person in the PDF\'s own real-world example, in plain words, with no formulas or numbers the student has already seen (at most one number, only if it makes one point faster). Say what the idea claims and what it does not claim; if the student\'s objection is right about the practical side, say so in one line. Never answer with "it is just the definition" or "it is a convention". Give formulas and numbers only when asked, after the plain meaning.',
     '- Do not introduce any symbol, number, or formula without the line that produces it. If the question asks "why X", build up to X and write X last, as the conclusion.',
-    '- Do not re-read the PDF if you already read it earlier in this conversation. Rely on what you already know. Read again only if it is a different PDF, or you need specific pages you have not read yet, and then read only those pages.',
+    '- Do not re-read the PDF if you already read it earlier in this conversation. Rely on what you already know. Read again only if it is a different PDF, or you need specific pages you have not read yet (for example the page that defines a term the student asks about, when you have only read other pages), and then read only those pages.',
     ...(selectedText?.trim()
       ? [
           '- The user has selected the following text in the PDF viewer. Treat it as the primary focus of their request unless the request clearly says otherwise:',
@@ -207,13 +301,14 @@ function buildFollowUpPrompt(input: AnnotPromptInput, screenshotInstruction: str
         ]
       : []),
     ...describeScreenshots(screenshotPaths, screenshotInstruction, false),
+    ...describeAttachments(attachmentPaths, screenshotInstruction),
     '',
     'Editing the PDF itself (this message):',
-    ...buildEditPromptLines(input.edit ?? { allowed: false }),
+    ...(isDocxPath(currentPdfPath) ? [EDITING_UNAVAILABLE_LINE] : buildEditPromptLines(input.edit ?? { allowed: false })),
     '',
     'User request:',
     prompt,
   ];
 
-  return lines.join('\n');
+  return adaptToDocumentKind(lines, currentPdfPath, selectedText).join('\n');
 }

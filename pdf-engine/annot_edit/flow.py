@@ -194,6 +194,8 @@ class WorkDoc:
             graphics=fitz.PDF_REDACT_LINE_ART_REMOVE_IF_COVERED,
             text=fitz.PDF_REDACT_TEXT_REMOVE,
         )
+        # everything below redact_y is rebuilt: positions recorded by an earlier operation on this page are stale
+        self.placements[page.xref] = [(r, k) for r, k in self.placements.get(page.xref, []) if r.y1 <= redact_y + 0.5]
         remaining = [w for w in page.get_text("words") if w[1] >= redact_y + 1 and w[3] <= redact_bottom]
         if remaining:
             raise EditError("redaction_failed", f"Could not cleanly detach the lower part of page {origin} ({len(remaining)} words remained). Use placement mode 'new_pages' instead.")
@@ -264,7 +266,6 @@ class WorkDoc:
                 idx += 1
             else:
                 band: Band = obj
-                unit_h = band.height + 1.0
                 ordinal = [q for q in queue[:idx] if q[0] == "unit"]
                 if ordinal:
                     prev_band: Band = ordinal[-1][1]
@@ -273,19 +274,30 @@ class WorkDoc:
                     gap = max(after_gap, prev_after)
                 if first_on_page:
                     gap = 0.0
-                if y + gap + unit_h > prof.bottom_limit + EPS and not first_on_page:
+                if y + gap + band.height + 1.0 > prof.bottom_limit + EPS and not first_on_page:
                     start_new_page()
                     continue
-                dest_y = y + gap
-                rect = fitz.Rect(0, dest_y, W, dest_y + unit_h)
-                clip = fitz.Rect(0, band.y0 - 0.5, W, band.y1 + 0.5)
-                cur_page.show_pdf_page(rect, src, 0, clip=clip)
-                self._place(cur_page, fitz.Rect(band.x0, dest_y + 0.5, band.x1, dest_y + 0.5 + band.height), "unit")
-                unit_dest.append((band, cur, dest_y + 0.5 - band.y0 + 0.0))
-                y = dest_y + unit_h
+                dest_top = y + gap
+                # Bands that follow each other keep their original spacing, so as many as fit on this page move as ONE
+                # block. One copy of the page per band nested hundreds of hidden copies inside the page after two edits.
+                run = [band]
+                while idx + len(run) < len(queue) and queue[idx + len(run)][0] == "unit":
+                    following: Band = queue[idx + len(run)][1]
+                    if dest_top + (following.y1 - band.y0) + 1.0 > prof.bottom_limit + EPS:
+                        break
+                    run.append(following)
+                clip = fitz.Rect(0, band.y0 - 0.5, W, run[-1].y1 + 0.5) & src[0].rect
+                if clip.is_empty:
+                    raise EditError("band_outside_page", f"Part of page {origin} lies outside the page area and cannot be moved. Use placement mode 'new_pages' instead.")
+                offset = dest_top - (band.y0 - 0.5)
+                cur_page.show_pdf_page(fitz.Rect(0, dest_top, W, dest_top + clip.height), src, 0, clip=clip)
+                for moved in run:
+                    self._place(cur_page, fitz.Rect(moved.x0, moved.y0 + offset, moved.x1, moved.y1 + offset), "unit")
+                    unit_dest.append((moved, cur, offset))
+                y = dest_top + clip.height
                 prev_after = 0.0
                 first_on_page = False
-                idx += 1
+                idx += len(run)
 
         # carry highlights and links along
         def locate(rect: fitz.Rect) -> Optional[Tuple[int, float]]:

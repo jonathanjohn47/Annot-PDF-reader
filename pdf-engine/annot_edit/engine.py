@@ -14,6 +14,7 @@ import fitz
 from .checks import content_strings, dependents_and_refs, numbering_mode, run_checks
 from .flow import WorkDoc
 from .ops import apply_ops, page_ref_map
+from .prune import prune_page_fully
 from .util import EditError, area, issue, norm_text
 
 PREVIEW_DPI = 100
@@ -166,6 +167,24 @@ def render_previews(orig: fitz.Document, work: WorkDoc, out_dir: str) -> List[Di
     return manifest
 
 
+def resolve_images(proposal: Dict[str, Any], workspace_root: Optional[str]) -> None:
+    """Attach the absolute file of every image block, accepting only files the app saved as chat attachments."""
+    root = os.path.realpath(workspace_root) if workspace_root else None
+    for op in proposal["ops"]:
+        if op.get("type") != "insert_content":
+            continue
+        for block in op["blocks"]:
+            if block.get("type") != "image":
+                continue
+            relative = str(block.get("path", ""))
+            absolute = os.path.realpath(os.path.join(root, relative)) if root else ""
+            if not root or os.path.commonpath([root, absolute]) != root or f"{os.sep}.annot{os.sep}attachments{os.sep}" not in absolute:
+                raise EditError("image_path", f"Image '{relative}' is not an attached file. Use the exact path given in the user's attachment list.")
+            if not os.path.isfile(absolute):
+                raise EditError("image_missing", f"The attached image '{relative}' no longer exists on disk.")
+            block["abs_path"] = absolute
+
+
 def build(payload: Dict[str, Any]) -> Dict[str, Any]:
     pdf_path = payload["pdfPath"]
     out_path = payload.get("outPath")
@@ -181,6 +200,7 @@ def build(payload: Dict[str, Any]) -> Dict[str, Any]:
         has_refs = "{{page:" in json.dumps(proposal["ops"]) and numbering_mode(orig) == "index"
         work: Optional[WorkDoc] = None
         try:
+            resolve_images(proposal, payload.get("workspaceRoot"))
             work = WorkDoc(pdf_path)
             results = apply_ops(work, proposal["ops"], None)
             if has_refs:
@@ -193,6 +213,9 @@ def build(payload: Dict[str, Any]) -> Dict[str, Any]:
         except EditError as err:
             return {"ok": False, "stage": "apply", "issues": issues + [err.as_issue()]}
 
+        for i, tag in enumerate(work.tags):
+            if tag["kind"] != "orig":
+                prune_page_fully(work.doc, work.doc[i])   # hidden copies left by moving blocks: invisible, but slow to display
         problems = verify_result(work, orig, proposal)
         issues += problems
         issues += work.warnings
